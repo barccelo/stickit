@@ -17,11 +17,16 @@ Fuente: `https://github.com/barccelo/stickit`.
 
 Obtainium detectará solamente APK publicados como archivos de **GitHub Releases**. El paquete de las versiones finales es siempre `com.barccelo.stickit`. Deben incrementarse `versionCode` y `versionName` para cada release. Todas las versiones deben firmarse con **el mismo keystore privado**; perder la clave obliga a reinstalar y puede perder los datos.
 
-Para proteger futuras actualizaciones, el workflow **no publica releases sin firma**. Se necesitan estos cuatro secretos en Settings → Secrets and variables → Actions:
-- `STICKIT_KEYSTORE_BASE64`: archivo JKS codificado en base64.
-- `STICKIT_STORE_PASSWORD`
-- `STICKIT_KEY_ALIAS`
-- `STICKIT_KEY_PASSWORD`
+Para proteger futuras actualizaciones, el workflow **no publica APK sin firma**. Se utiliza un único secreto privado de GitHub Actions, con nombre `STICKIT_SIGNING_BUNDLE`. El archivo de configuración privada fue generado fuera del repositorio; no debe copiarse al árbol del proyecto.
+
+### Activación inicial de Obtainium
+1. Entrar en [GitHub → Añadir secreto](https://github.com/barccelo/stickit/settings/secrets/actions/new).
+2. Escribir `STICKIT_SIGNING_BUNDLE` como nombre y pegar el valor que está en `Stickit-GitHub-secret-PRIVATE.txt`. Guardar.
+3. Entrar en [GitHub Actions → Android · Build and release](https://github.com/barccelo/stickit/actions/workflows/android.yml). Pulsar **Run workflow** en `main`.
+4. Cuando finalice correctamente, aparecerá `stickit-v0.1.0.apk` en [GitHub Releases](https://github.com/barccelo/stickit/releases).
+5. En Obtainium, pulsar **Add App** y pegar `https://github.com/barccelo/stickit`, usando GitHub Releases como fuente.
+
+El secreto es irrecuperable desde la interfaz de GitHub. Conservar una copia privada de la clave, y nunca añadirla a ningún commit.
 
 Las compilaciones de la rama `main` generan APK de desarrollo con paquete independiente `com.barccelo.stickit.debug` y firma de prueba. **No instalar el debug como sustituto del APK de Obtainium.**
 
