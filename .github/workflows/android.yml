@@ -1,0 +1,63 @@
+name: Android · Build and release
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Install Android SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Build developer APK
+        run: gradle :app:assembleDebug --stacktrace
+      - name: Upload developer APK (not for Obtainium)
+        uses: actions/upload-artifact@v4
+        with:
+          name: stickit-debug
+          path: app/build/outputs/apk/debug/*.apk
+      - name: Verify signing secrets for Obtainium release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          STORE_B64: ${{ secrets.STICKIT_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STICKIT_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.STICKIT_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.STICKIT_KEY_PASSWORD }}
+        run: |
+          test -n "$STORE_B64" || { echo "::error::STICKIT_KEYSTORE_BASE64 is missing"; exit 1; }
+          test -n "$STORE_PASSWORD" || { echo "::error::STICKIT_STORE_PASSWORD is missing"; exit 1; }
+          test -n "$KEY_ALIAS" || { echo "::error::STICKIT_KEY_ALIAS is missing"; exit 1; }
+          test -n "$KEY_PASSWORD" || { echo "::error::STICKIT_KEY_PASSWORD is missing"; exit 1; }
+          printf '%s' "$STORE_B64" | base64 -d > "$RUNNER_TEMP/stickit-release.jks"
+      - name: Build signed, updatable APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          STICKIT_KEYSTORE_PATH: ${{ runner.temp }}/stickit-release.jks
+          STICKIT_STORE_PASSWORD: ${{ secrets.STICKIT_STORE_PASSWORD }}
+          STICKIT_KEY_ALIAS: ${{ secrets.STICKIT_KEY_ALIAS }}
+          STICKIT_KEY_PASSWORD: ${{ secrets.STICKIT_KEY_PASSWORD }}
+        run: gradle :app:assembleRelease --stacktrace
+      - name: Publish to GitHub Releases for Obtainium
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          cp "$APK" "stickit-${GITHUB_REF_NAME}.apk"
+          gh release create "${GITHUB_REF_NAME}" "stickit-${GITHUB_REF_NAME}.apk" --title "Stickit ${GITHUB_REF_NAME}" --generate-notes
