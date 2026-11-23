@@ -23,7 +23,9 @@ jobs:
           gradle-version: '8.13'
       - name: Install Android SDK 35
         run: |
-          sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+          SDK_MANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -1)"
+          test -n "$SDK_MANAGER"
+          "$SDK_MANAGER" --install "platforms;android-35" "build-tools;35.0.0"
       - name: Build developer APK
         run: gradle :app:assembleDebug --stacktrace
       - name: Upload developer APK (not for Obtainium)
