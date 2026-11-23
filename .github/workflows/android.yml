@@ -32,7 +32,7 @@ jobs:
       - name: Build developer APK
         run: gradle :app:assembleDebug --stacktrace
       - name: Validate GIF encoding (JVM unit tests)
-        run: gradle :app:testDebugUnitTest --stacktrace
+        run: gradle :gif-core:test --stacktrace
       - name: Upload developer APK (not for Obtainium)
         uses: actions/upload-artifact@v4
         with:

@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "Stickit"
-include(":app")
+include(":app", ":gif-core")
