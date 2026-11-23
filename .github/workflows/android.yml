@@ -33,33 +33,51 @@ jobs:
         with:
           name: stickit-debug
           path: app/build/outputs/apk/debug/*.apk
-      - name: Verify signing secrets for Obtainium release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Prepare permanent signing key
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        shell: bash
         env:
-          STORE_B64: ${{ secrets.STICKIT_KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.STICKIT_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.STICKIT_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.STICKIT_KEY_PASSWORD }}
+          SIGNING_BUNDLE: ${{ secrets.STICKIT_SIGNING_BUNDLE }}
         run: |
-          test -n "$STORE_B64" || { echo "::error::STICKIT_KEYSTORE_BASE64 is missing"; exit 1; }
-          test -n "$STORE_PASSWORD" || { echo "::error::STICKIT_STORE_PASSWORD is missing"; exit 1; }
-          test -n "$KEY_ALIAS" || { echo "::error::STICKIT_KEY_ALIAS is missing"; exit 1; }
-          test -n "$KEY_PASSWORD" || { echo "::error::STICKIT_KEY_PASSWORD is missing"; exit 1; }
-          printf '%s' "$STORE_B64" | base64 -d > "$RUNNER_TEMP/stickit-release.jks"
-      - name: Build signed, updatable APK
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          STICKIT_KEYSTORE_PATH: ${{ runner.temp }}/stickit-release.jks
-          STICKIT_STORE_PASSWORD: ${{ secrets.STICKIT_STORE_PASSWORD }}
-          STICKIT_KEY_ALIAS: ${{ secrets.STICKIT_KEY_ALIAS }}
-          STICKIT_KEY_PASSWORD: ${{ secrets.STICKIT_KEY_PASSWORD }}
+          set -euo pipefail
+          test -n "$SIGNING_BUNDLE" || { echo "::error::Missing GitHub secret STICKIT_SIGNING_BUNDLE"; exit 1; }
+          PASS="${SIGNING_BUNDLE%%:*}"
+          ENCODED="${SIGNING_BUNDLE#*:}"
+          test -n "$PASS" && test -n "$ENCODED" && test "$PASS" != "$ENCODED" || { echo "::error::Invalid signing bundle"; exit 1; }
+          echo "::add-mask::$PASS"
+          printf '%s' "$ENCODED" | base64 -d > "$RUNNER_TEMP/stickit-release.p12"
+          chmod 600 "$RUNNER_TEMP/stickit-release.p12"
+          keytool -list -keystore "$RUNNER_TEMP/stickit-release.p12" -storetype PKCS12 -storepass "$PASS" -alias stickit >/dev/null
+          echo "STICKIT_KEYSTORE_PATH=$RUNNER_TEMP/stickit-release.p12" >> "$GITHUB_ENV"
+          echo "STICKIT_STORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "STICKIT_KEY_ALIAS=stickit" >> "$GITHUB_ENV"
+          echo "STICKIT_KEY_PASSWORD=$PASS" >> "$GITHUB_ENV"
+      - name: Build permanent signed APK
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         run: gradle :app:assembleRelease --stacktrace
-      - name: Publish to GitHub Releases for Obtainium
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Verify APK signature
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk
+      - name: Publish GitHub Release for Obtainium
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          VERSION="$(sed -nE 's/.*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts | head -1)"
+          test -n "$VERSION" || { echo "::error::Missing versionName"; exit 1; }
+          TAG="v$VERSION"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            test "$TAG" = "$GITHUB_REF_NAME" || { echo "::error::Tag must equal $TAG"; exit 1; }
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists; increment versionCode and versionName before publishing."
+            exit 1
+          fi
           APK="app/build/outputs/apk/release/app-release.apk"
           test -s "$APK"
-          cp "$APK" "stickit-${GITHUB_REF_NAME}.apk"
-          gh release create "${GITHUB_REF_NAME}" "stickit-${GITHUB_REF_NAME}.apk" --title "Stickit ${GITHUB_REF_NAME}" --generate-notes
+          cp "$APK" "stickit-$TAG.apk"
+          gh release create "$TAG" "stickit-$TAG.apk" --target "$GITHUB_SHA" --title "Stickit $TAG" --generate-notes
