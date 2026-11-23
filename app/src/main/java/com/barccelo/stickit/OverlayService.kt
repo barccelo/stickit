@@ -42,6 +42,11 @@ class OverlayService : Service() {
     private lateinit var store: StickerStore
     private var bubble: View? = null
     private var panel: View? = null
+    private val preferences by lazy { getSharedPreferences("stickit_ui", Context.MODE_PRIVATE) }
+
+    companion object {
+        const val ACTION_HIDE = "com.barccelo.stickit.HIDE_SELECTOR"
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -52,9 +57,13 @@ class OverlayService : Service() {
         store = StickerStore(this)
         startPersistentNotification()
         showBubble()
+        preferences.edit().putBoolean("overlay_enabled", true).apply()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_HIDE) stopSelf()
+        return START_NOT_STICKY
+    }
 
     private fun startPersistentNotification() {
         val channelId = "stickit_overlay"
@@ -65,11 +74,17 @@ class OverlayService : Service() {
         val openIntent = PendingIntent.getActivity(this, 0,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val hideIntent = PendingIntent.getService(this, 1,
+            Intent(this, OverlayService::class.java).setAction(ACTION_HIDE),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = Notification.Builder(this, channelId)
-            .setSmallIcon(android.R.drawable.ic_menu_gallery)
+            .setSmallIcon(R.drawable.ic_stickit)
             .setContentTitle("Stickit")
-            .setContentText("Selector flotante disponible")
+            .setContentText("Selector flotante activo")
             .setContentIntent(openIntent)
+            .addAction(Notification.Action.Builder(
+                android.R.drawable.ic_menu_close_clear_cancel, "Ocultar selector", hideIntent
+            ).build())
             .setOngoing(true)
             .build()
         if (Build.VERSION.SDK_INT >= 34) {
@@ -85,14 +100,12 @@ class OverlayService : Service() {
     }
 
     private fun showBubble() {
-        val button = TextView(this).apply {
-            text = "S"
-            textSize = 24f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            background = rounded(Color.rgb(63, 77, 199), 50)
-            elevation = dp(10).toFloat()
-            contentDescription = "Abrir selector de stickers"
+        val button = ImageView(this).apply {
+            setImageResource(R.drawable.ic_stickit)
+            setPadding(dp(11), dp(11), dp(11), dp(11))
+            background = rounded(Color.rgb(71, 83, 174), 50)
+            elevation = dp(6).toFloat()
+            contentDescription = "Abrir selector. Mantener pulsado para ocultar."
         }
         val params = WindowManager.LayoutParams(
             dp(54), dp(54),
@@ -100,7 +113,11 @@ class OverlayService : Service() {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.TOP or Gravity.START; x = dp(12); y = dp(260) }
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = preferences.getInt("bubble_x", dp(12))
+            y = preferences.getInt("bubble_y", dp(260))
+        }
         var x0 = 0
         var y0 = 0
         var fingerX = 0f
@@ -119,8 +136,16 @@ class OverlayService : Service() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (abs(event.rawX - fingerX) < dp(12) &&
-                        abs(event.rawY - fingerY) < dp(12)) togglePanel()
+                    val moved = abs(event.rawX - fingerX) >= dp(12) ||
+                        abs(event.rawY - fingerY) >= dp(12)
+                    if (moved) {
+                        preferences.edit().putInt("bubble_x", params.x)
+                            .putInt("bubble_y", params.y).apply()
+                    } else if (event.eventTime - event.downTime >= 600L) {
+                        stopSelf()
+                    } else {
+                        togglePanel()
+                    }
                     true
                 }
                 else -> true
@@ -168,6 +193,23 @@ class OverlayService : Service() {
         }
         scroll.addView(grid)
         root.addView(scroll, LinearLayout.LayoutParams(-1, dp(276)))
+        val hint = TextView(this).apply {
+            text = "Toca para copiar · Mantén pulsada la burbuja para ocultarla"
+            textSize = 11f
+            setTextColor(Color.rgb(125, 129, 145))
+            gravity = Gravity.CENTER
+            setPadding(0, dp(8), 0, dp(6))
+        }
+        root.addView(hint)
+        val hide = TextView(this).apply {
+            text = "Ocultar selector"
+            textSize = 14f
+            setTextColor(Color.rgb(71, 83, 174))
+            gravity = Gravity.CENTER
+            background = rounded(Color.rgb(239, 241, 251), 14)
+            setOnClickListener { stopSelf() }
+        }
+        root.addView(hide, LinearLayout.LayoutParams(-1, dp(44)))
 
         fun render(query: String) {
             grid.removeAllViews()
@@ -250,6 +292,7 @@ class OverlayService : Service() {
     }
 
     override fun onDestroy() {
+        preferences.edit().putBoolean("overlay_enabled", false).apply()
         closePanel()
         bubble?.let { try { windows.removeView(it) } catch (_: Exception) { } }
         bubble = null
