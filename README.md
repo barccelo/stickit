@@ -15,6 +15,8 @@ Aplicación Android nativa para preparar GIFs que WhatsApp puede ofrecer como GI
 
 Fuente: `https://github.com/barccelo/stickit`.
 
+[**Añadir Stickit a Obtainium**](https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%257B%2522id%2522%253A%2522com.barccelo.stickit%2522%252C%2522url%2522%253A%2522https%253A%252F%252Fgithub.com%252Fbarccelo%252Fstickit%2522%252C%2522author%2522%253A%2522barccelo%2522%252C%2522name%2522%253A%2522Stickit%2522%257D) (enlace que abre Obtainium y precarga Stickit; la instalación funcionará cuando exista el primer APK en Releases).
+
 Obtainium detectará solamente APK publicados como archivos de **GitHub Releases**. El paquete de las versiones finales es siempre `com.barccelo.stickit`. Deben incrementarse `versionCode` y `versionName` para cada release. Todas las versiones deben firmarse con **el mismo keystore privado**; perder la clave obliga a reinstalar y puede perder los datos.
 
 Para proteger futuras actualizaciones, el workflow **no publica APK sin firma**. Se utiliza un único secreto privado de GitHub Actions, con nombre `STICKIT_SIGNING_BUNDLE`. El archivo de configuración privada fue generado fuera del repositorio; no debe copiarse al árbol del proyecto.
