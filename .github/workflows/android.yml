@@ -1,4 +1,7 @@
 name: Android · Build and release
+
+# Once the version is incremented, a successful main build publishes a signed
+# GitHub Release automatically. Obtainium monitors those APK assets.
 on:
   push:
     branches: [main]
@@ -36,7 +39,7 @@ jobs:
           name: stickit-debug
           path: app/build/outputs/apk/debug/*.apk
       - name: Prepare permanent signing key
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         shell: bash
         env:
           SIGNING_BUNDLE: ${{ secrets.STICKIT_SIGNING_BUNDLE }}
@@ -55,15 +58,15 @@ jobs:
           echo "STICKIT_KEY_ALIAS=stickit" >> "$GITHUB_ENV"
           echo "STICKIT_KEY_PASSWORD=$PASS" >> "$GITHUB_ENV"
       - name: Build permanent signed APK
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         run: gradle :app:assembleRelease --stacktrace
       - name: Verify APK signature
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk
       - name: Publish GitHub Release for Obtainium
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -76,8 +79,8 @@ jobs:
             test "$TAG" = "$GITHUB_REF_NAME" || { echo "::error::Tag must equal $TAG"; exit 1; }
           fi
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "::error::Release $TAG already exists; increment versionCode and versionName before publishing."
-            exit 1
+            echo "Release $TAG already exists. Nothing to publish."
+            exit 0
           fi
           APK="app/build/outputs/apk/release/app-release.apk"
           test -s "$APK"
