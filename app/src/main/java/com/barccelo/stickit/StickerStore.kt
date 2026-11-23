@@ -1,0 +1,119 @@
+package com.barccelo.stickit
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.ContentValues
+import android.content.Context
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
+import androidx.core.content.FileProvider
+import java.io.File
+
+data class Sticker(
+    val id: Long,
+    val fileName: String,
+    val name: String,
+    val tags: String,
+    val pack: String,
+    val createdAt: Long,
+    val lastUsed: Long,
+    val uses: Int,
+    val favorite: Boolean
+) {
+    fun tagList() = tags.split(",").map { it.trim() }.filter { it.isNotBlank() }
+    fun matches(query: String): Boolean {
+        val q = query.trim()
+        return q.isBlank() || listOf(name, tags, pack).any { it.contains(q, ignoreCase = true) }
+    }
+}
+
+class StickerStore(private val appContext: Context) :
+    SQLiteOpenHelper(appContext, "stickit.db", null, 1) {
+    override fun onCreate(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE stickers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            tags TEXT NOT NULL DEFAULT '',
+            package_name TEXT NOT NULL DEFAULT 'General',
+            created_at INTEGER NOT NULL,
+            last_used INTEGER NOT NULL DEFAULT 0,
+            use_count INTEGER NOT NULL DEFAULT 0,
+            favorite INTEGER NOT NULL DEFAULT 0
+        )""")
+    }
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+
+    fun all(): List<Sticker> {
+        val result = mutableListOf<Sticker>()
+        readableDatabase.rawQuery("SELECT * FROM stickers ORDER BY created_at DESC", null).use { c ->
+            while (c.moveToNext()) {
+                result.add(Sticker(
+                    c.getLong(c.getColumnIndexOrThrow("id")),
+                    c.getString(c.getColumnIndexOrThrow("filename")),
+                    c.getString(c.getColumnIndexOrThrow("name")),
+                    c.getString(c.getColumnIndexOrThrow("tags")),
+                    c.getString(c.getColumnIndexOrThrow("package_name")),
+                    c.getLong(c.getColumnIndexOrThrow("created_at")),
+                    c.getLong(c.getColumnIndexOrThrow("last_used")),
+                    c.getInt(c.getColumnIndexOrThrow("use_count")),
+                    c.getInt(c.getColumnIndexOrThrow("favorite")) == 1
+                ))
+            }
+        }
+        return result
+    }
+
+    fun add(file: File, name: String, tags: String, pack: String): Long {
+        val row = ContentValues().apply {
+            put("filename", file.name)
+            put("name", name.ifBlank { "Sin título" })
+            put("tags", sanitizeTags(tags))
+            put("package_name", pack.ifBlank { "General" }.trim())
+            put("created_at", System.currentTimeMillis())
+        }
+        return writableDatabase.insertOrThrow("stickers", null, row)
+    }
+
+    fun update(sticker: Sticker, name: String, tags: String, pack: String) {
+        val values = ContentValues().apply {
+            put("name", name.trim().ifBlank { "Sin título" })
+            put("tags", sanitizeTags(tags))
+            put("package_name", pack.trim().ifBlank { "General" })
+        }
+        writableDatabase.update("stickers", values, "id=?", arrayOf(sticker.id.toString()))
+    }
+
+    fun toggleFavorite(sticker: Sticker) {
+        val values = ContentValues().apply { put("favorite", if (sticker.favorite) 0 else 1) }
+        writableDatabase.update("stickers", values, "id=?", arrayOf(sticker.id.toString()))
+    }
+
+    fun markUsed(sticker: Sticker) {
+        writableDatabase.execSQL(
+            "UPDATE stickers SET last_used=?, use_count=use_count+1 WHERE id=?",
+            arrayOf(System.currentTimeMillis(), sticker.id)
+        )
+    }
+
+    fun remove(sticker: Sticker) {
+        writableDatabase.delete("stickers", "id=?", arrayOf(sticker.id.toString()))
+        stickerFile(sticker).delete()
+    }
+
+    fun stickerFile(sticker: Sticker): File = File(File(appContext.filesDir, "stickers"), sticker.fileName)
+
+    private fun sanitizeTags(raw: String) =
+        raw.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct().joinToString(", ")
+}
+
+object ClipboardBridge {
+    fun copyGif(context: Context, file: File) {
+        require(file.exists() && file.extension.equals("gif", ignoreCase = true))
+        val uri = FileProvider.getUriForFile(
+            context, "${context.packageName}.fileprovider", file
+        )
+        val clip = ClipData.newUri(context.contentResolver, "Stickit GIF", uri)
+        (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(clip)
+    }
+}
