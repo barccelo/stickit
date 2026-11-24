@@ -385,11 +385,20 @@ class MainActivity : ComponentActivity() {
                 for (i in 0 until clips.itemCount) clips.getItemAt(i).uri?.let { received.add(it) }
             }
         }
+        val message = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
+        val link = Regex("https://(?:[a-zA-Z0-9-]+\\.)*(?:whatsapp\\.com|wa\\.me)/[^\\s]+",
+            RegexOption.IGNORE_CASE).find(message)?.value?.takeIf {
+                it.contains("sticker", ignoreCase = true)
+            }
         if (received.isNotEmpty()) {
             val unique = received.distinct().take(100)
             val packages = unique.filter(::isZipContent)
             if (packages.size == 1 && unique.size == 1) {
                 pendingZip = packages.first()
+            } else if (link != null && packages.isEmpty()) {
+                // WhatsApp pack sharing can attach an image thumbnail along
+                // with the link. Do not mistake that preview for the pack.
+                pendingPackLink = link
             } else {
                 pendingImport = unique.filterNot(::isZipContent)
                 if (packages.isNotEmpty()) {
@@ -398,9 +407,6 @@ class MainActivity : ComponentActivity() {
             }
             return
         }
-        val message = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
-        val link = Regex("https://(?:[a-zA-Z0-9-]+\\.)*(?:whatsapp\\.com|wa\\.me)/[^\\s]+",
-            RegexOption.IGNORE_CASE).find(message)?.value
         if (link != null) pendingPackLink = link
         else if (intent.action == Intent.ACTION_SEND && message.isNotBlank()) {
             notify("WhatsApp compartió texto, no archivos de stickers.")
