@@ -144,7 +144,7 @@ object GifConverter {
     fun reprocessStoredWebp(
         context: Context,
         file: File,
-        profile: WebPPlaybackProfile = WebPPlaybackProfile.WHATSAPP_COMPAT
+        profile: WebPPlaybackProfile = WebPPlaybackProfile.FULL_REFERENCE_CADENCE
     ) {
         val source = File(file.parentFile,
             "${file.nameWithoutExtension}.source.webp")

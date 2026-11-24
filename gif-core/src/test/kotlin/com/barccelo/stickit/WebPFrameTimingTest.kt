@@ -113,4 +113,43 @@ class WebPFrameTimingTest {
             assertTrue(expected.message!!.contains("demasiados fotogramas"))
         }
     }
+
+    @Test fun fullReferenceCadenceExtendsSlowSourceInsteadOfClipping() {
+        val source = (1..150).map { it * 80 }
+        val result = WebPFrameTiming.fullLengthAtReferenceCadence(source)
+        assertEquals(150, result.size)
+        assertEquals(600, result.sumOf { it.delayCentiseconds })
+        assertEquals(149, result.last().sourceIndex)
+        assertTrue(result.all { it.delayCentiseconds == 4 })
+    }
+
+    @Test fun fullReferenceCadenceKeepsEntire25FpsAnimation() {
+        val result = WebPFrameTiming.fullLengthAtReferenceCadence(
+            (1..160).map { it * 40 })
+        assertEquals(160, result.size)
+        assertEquals(640, result.sumOf { it.delayCentiseconds })
+        assertEquals(159, result.last().sourceIndex)
+    }
+
+    @Test fun fullReferenceCadenceDoesNotSlowFastInput() {
+        val result = WebPFrameTiming.fullLengthAtReferenceCadence(
+            (1..300).map { it * 10 })
+        assertEquals(300, result.sumOf { it.delayCentiseconds })
+        assertEquals(0, result.first().sourceIndex)
+        assertEquals(299, result.last().sourceIndex)
+        assertTrue(result.size <= 75)
+    }
+
+    @Test fun fullReferenceCadenceWrittenGifKeepsFrameDelays() {
+        val frames = WebPFrameTiming.fullLengthAtReferenceCadence(
+            (1..110).map { it * 70 })
+        val output = ByteArrayOutputStream()
+        val writer = GifWriter(output, 8)
+        val pixels = IntArray(64) { 0xFF119977.toInt() }
+        frames.forEach { writer.frame(pixels, it.delayCentiseconds) }
+        writer.finish()
+        assertEquals(frames.map { it.delayCentiseconds },
+            GifFrameTiming.delaysCentiseconds(output.toByteArray()))
+        assertEquals(109, frames.last().sourceIndex)
+    }
 }

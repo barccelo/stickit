@@ -22,6 +22,55 @@ object WebPFrameTiming {
 
     data class OutputFrame(val sourceIndex: Int, val delayCentiseconds: Int)
 
+    /**
+     * Reproduce the short 2.4-s reference's 40-ms GIF cadence across the
+     * FULL original WebP. This experimental mode differs from both existing
+     * full-duration modes: it never holds a slow WebP frame for >40 ms.
+     * Fast input (>25 FPS) is sampled at 25 FPS to avoid slowing it down.
+     */
+    fun fullLengthAtReferenceCadence(frameEndTimesMs: List<Int>): List<OutputFrame> {
+        require(frameEndTimesMs.isNotEmpty()) { "El WebP no contiene fotogramas" }
+        require(frameEndTimesMs.size <= MAX_SOURCE_FRAMES) {
+            "La animación contiene demasiados fotogramas"
+        }
+        var totalMs = 0
+        frameEndTimesMs.forEach { end ->
+            require(end >= totalMs) { "Los tiempos de los fotogramas están desordenados" }
+            totalMs = end
+        }
+        require(totalMs > 0) { "La animación no tiene duración válida" }
+        require(totalMs <= MAX_DURATION_MS) {
+            "La animación supera 30 segundos. No se recortará sin autorización."
+        }
+        val count = frameEndTimesMs.size
+        val fastSource = totalMs.toLong() < count.toLong() * 40L
+        val targetCount = if (fastSource) ((totalMs.toLong() + 39) / 40).toInt()
+            else count
+        require(targetCount in 1..750)
+        val result = ArrayList<OutputFrame>(targetCount)
+        var sourceCursor = 0
+        for (i in 0 until targetCount) {
+            val sourceIndex = if (fastSource) {
+                val timeMs = i.toLong() * 40L
+                while (sourceCursor < frameEndTimesMs.lastIndex &&
+                    frameEndTimesMs[sourceCursor].toLong() <= timeMs) sourceCursor++
+                if (i == targetCount - 1) frameEndTimesMs.lastIndex
+                else sourceCursor
+            } else {
+                (i.toLong() * count / targetCount).toInt()
+            }
+            if (result.lastOrNull()?.sourceIndex == sourceIndex) {
+                val last = result.last()
+                result[result.lastIndex] = last.copy(
+                    delayCentiseconds = last.delayCentiseconds + 4)
+            } else result.add(OutputFrame(sourceIndex, 4))
+        }
+        check(result.sumOf { it.delayCentiseconds } == targetCount * 4)
+        check(result.first().sourceIndex == 0)
+        check(result.last().sourceIndex == frameEndTimesMs.lastIndex)
+        return result
+    }
+
     fun plan(
         frameEndTimesMs: List<Int>,
         maxOutputFrames: Int = COMPAT_FRAME_CAP,

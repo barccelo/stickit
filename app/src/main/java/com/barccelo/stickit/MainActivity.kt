@@ -346,12 +346,15 @@ class MainActivity : ComponentActivity() {
                             val profile = when (selected) {
                                 1 -> WebPPlaybackProfile.HIGH_FPS
                                 2 -> WebPPlaybackProfile.SHORT_REFERENCE
+                                3 -> WebPPlaybackProfile.FULL_REFERENCE_CADENCE
                                 else -> WebPPlaybackProfile.WHATSAPP_COMPAT
                             }
                             runTask {
                                 GifConverter.reprocessStoredWebp(this, gifFile,
                                     profile)
                                 when (profile) {
+                                    WebPPlaybackProfile.FULL_REFERENCE_CADENCE ->
+                                        "GIF completo con ritmo del modo corto. Pruébalo en WhatsApp."
                                     WebPPlaybackProfile.WHATSAPP_COMPAT ->
                                         "GIF completo en modo WhatsApp: máximo 60 cuadros."
                                     WebPPlaybackProfile.HIGH_FPS ->
@@ -373,7 +376,7 @@ class MainActivity : ComponentActivity() {
                             runTask {
                                 if (isWebpSource) {
                                     GifConverter.reprocessStoredWebp(this, gifFile)
-                                    "WebP restaurado y convertido con su duración original."
+                                    "WebP reconstruido con el ritmo del modo corto, sin cortar el final."
                                 } else {
                                     GifConverter.reprocessStoredGif(gifFile)
                                     "GIF reprocesado. Puedes copiarlo nuevamente."

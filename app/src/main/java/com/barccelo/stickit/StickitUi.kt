@@ -892,6 +892,12 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
                             DropdownMenu(expanded = playbackMenu,
                                 onDismissRequest = { playbackMenu = false }) {
                                 DropdownMenuItem(
+                                    text = { Text("Completo · ritmo de 2,4 s (nuevo)") },
+                                    onClick = {
+                                        playbackMenu = false
+                                        onWebpProfile(3)
+                                    })
+                                DropdownMenuItem(
                                     text = { Text("Completo · WhatsApp (60 cuadros)") },
                                     onClick = {
                                         playbackMenu = false
@@ -911,7 +917,7 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
                                     })
                             }
                         }
-                        Text("La referencia corta recorta deliberadamente la animación solo para comparar. Los modos completos conservan su duración.",
+                        Text("El nuevo modo usa la misma cadencia de 40 ms que la referencia corta, pero hasta el final de la animación. Comprueba el resultado pegándolo en WhatsApp.",
                             color = Secondary, fontSize = 11.sp, lineHeight = 16.sp)
                     } else if (canReprocess) {
                         TextButton(onClick = onReprocess) { Text(reprocessLabel) }
