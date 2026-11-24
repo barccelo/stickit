@@ -256,7 +256,7 @@ object StickitPackImport {
                     if (extension !in extensions) { skipped++; continue }
                     if (entry.size > 20_000_000L) { skipped++; continue }
                     val tmp = File(context.cacheDir,
-                        UUID.randomUUID().toString() + ".$"+"extension")
+                        UUID.randomUUID().toString() + ".$extension")
                     try {
                         zip.getInputStream(entry).use { input ->
                             FileOutputStream(tmp).use { output ->
