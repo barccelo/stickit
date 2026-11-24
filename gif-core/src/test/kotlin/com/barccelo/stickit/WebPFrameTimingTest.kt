@@ -39,6 +39,31 @@ class WebPFrameTimingTest {
         assertEquals(148, output.last().sourceIndex)
     }
 
+    @Test fun lowFrameRateWebpRepeatsTheSameSourceFrameWithoutTruncating() {
+        // Four 200-ms source frames must fill an 800-ms GIF at 25 fps.
+        val output = WebPFrameTiming.plan(listOf(200, 400, 600, 800))
+        assertEquals(20, output.size)
+        assertEquals(80, output.sumOf { it.delayCentiseconds })
+        assertEquals(5, output.count { it.sourceIndex == 0 })
+        assertEquals(5, output.count { it.sourceIndex == 1 })
+        assertEquals(5, output.count { it.sourceIndex == 2 })
+        assertEquals(5, output.count { it.sourceIndex == 3 })
+        assertTrue(output.all { it.delayCentiseconds == 4 })
+    }
+
+    @Test fun encodedDelaysMatchPlannedDurationForFastWebp() {
+        val output = WebPFrameTiming.plan((1..100).map { it * 10 })
+        val buffer = java.io.ByteArrayOutputStream()
+        val gif = GifWriter(buffer, 8)
+        val pixels = IntArray(64) { 0xFF112233.toInt() }
+        output.forEach { gif.frame(pixels, it.delayCentiseconds) }
+        gif.finish()
+        val encoded = GifFrameTiming.delaysCentiseconds(buffer.toByteArray())
+        assertEquals(output.map { it.delayCentiseconds }, encoded)
+        assertEquals(100, encoded.sum())
+        assertTrue(encoded.all { it >= 4 })
+    }
+
     @Test fun irregularSourceDurationsRemainWithinOneGifTick() {
         val source = listOf(33, 66, 116, 170, 240, 315, 401, 515, 645, 765)
         val output = WebPFrameTiming.plan(source)
