@@ -141,7 +141,11 @@ object GifConverter {
      * source-faithful timing. The original .source.webp is untouched.
      * The database row, tags, pack and favorite remain unchanged.
      */
-    fun reprocessStoredWebp(context: Context, file: File) {
+    fun reprocessStoredWebp(
+        context: Context,
+        file: File,
+        profile: WebPPlaybackProfile = WebPPlaybackProfile.WHATSAPP_COMPAT
+    ) {
         val source = File(file.parentFile,
             "${file.nameWithoutExtension}.source.webp")
         require(source.isFile) {
@@ -156,7 +160,8 @@ object GifConverter {
             val uri = androidx.core.content.FileProvider.getUriForFile(
                 context, "${context.packageName}.fileprovider", source
             )
-            WebPStickerImport.convert(context, uri, temporary, ::squarePixels)
+            WebPStickerImport.convert(context, uri, temporary, ::squarePixels,
+                profile)
             validate(temporary)
             try {
                 java.nio.file.Files.move(
