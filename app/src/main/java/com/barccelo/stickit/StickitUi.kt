@@ -617,10 +617,15 @@ private fun SettingsPanel(title: String, subtitle: String,
  * Compact removable capsules. The input is committed as one or more tokens
  * when the user taps +; editing never alters another sticker.
  */
+private fun mergeCapsules(saved: String, draft: String): String =
+    (saved.split(",") + draft.split(",")).map { it.trim() }
+        .filter { it.isNotBlank() }.distinctBy { it.lowercase() }
+        .joinToString(", ")
+
 @Composable
 fun CapsuleEditor(title: String, tokens: String, onChange: (String) -> Unit,
-    placeholder: String) {
-    var draft by remember { mutableStateOf("") }
+    placeholder: String, draftState: MutableState<String>) {
+    var draft by draftState
     val chips = tokens.split(",").map { it.trim() }.filter { it.isNotEmpty() }
     fun commit() {
         val additions = draft.split(",").map { it.trim() }
@@ -674,6 +679,8 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean, canUndo: Bool
     var name by remember(sticker.id) { mutableStateOf(sticker.name) }
     var tags by remember(sticker.id) { mutableStateOf(sticker.tags) }
     var emojis by remember(sticker.id) { mutableStateOf(sticker.emojis) }
+    val tagDraft = remember(sticker.id) { mutableStateOf("") }
+    val emojiDraft = remember(sticker.id) { mutableStateOf("") }
     var pack by remember(sticker.id) { mutableStateOf(sticker.pack) }
     var deletion by remember { mutableStateOf(false) }
     if (deletion) {
@@ -686,13 +693,14 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean, canUndo: Bool
         AlertDialog(onDismissRequest = onDismiss,
             title = { Text("Editar sticker") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.heightIn(max = 470.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(value = name, onValueChange = { name = it },
                         singleLine = true, label = { Text("Nombre") })
                     CapsuleEditor("Etiquetas", tags, { tags = it },
-                        "Ej.: bravo, meme, amarillo")
+                        "Ej.: bravo, meme, amarillo", tagDraft)
                     CapsuleEditor("Emojis asociados", emojis, { emojis = it },
-                        "Ej.: 😂, 😡, ❤️")
+                        "Ej.: 😂, 😡, ❤️", emojiDraft)
                     OutlinedTextField(value = pack, onValueChange = { pack = it },
                         singleLine = true, label = { Text("Paquete") })
                     OutlinedButton(onClick = onArtwork, modifier = Modifier.fillMaxWidth()) {
@@ -711,7 +719,10 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean, canUndo: Bool
                     }
                 }
             },
-            confirmButton = { Button(onClick = { onSave(name, tags, pack, emojis) }) { Text("Guardar") } },
+            confirmButton = { Button(onClick = {
+                onSave(name, mergeCapsules(tags, tagDraft.value), pack,
+                    mergeCapsules(emojis, emojiDraft.value))
+            }) { Text("Guardar") } },
             dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
     }
 }
@@ -722,22 +733,30 @@ fun ImportStickersDialog(count: Int, suggestedName: String,
     var name by remember { mutableStateOf(suggestedName) }
     var tags by remember { mutableStateOf("") }
     var emojis by remember { mutableStateOf("") }
+    val tagDraft = remember { mutableStateOf("") }
+    val emojiDraft = remember { mutableStateOf("") }
     var pack by remember { mutableStateOf("General") }
     AlertDialog(onDismissRequest = onDismiss,
         title = { Text(if (count == 1) "Guardar sticker" else "Importar $count stickers") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (count == 1) OutlinedTextField(name, { name = it },
                     label = { Text("Nombre") }, singleLine = true)
-                CapsuleEditor("Etiquetas", tags, { tags = it }, "Ej.: risa, reacción")
-                CapsuleEditor("Emojis", emojis, { emojis = it }, "Ej.: 😂, ❤️")
+                CapsuleEditor("Etiquetas", tags, { tags = it },
+                    "Ej.: risa, reacción", tagDraft)
+                CapsuleEditor("Emojis", emojis, { emojis = it }, "Ej.: 😂, ❤️",
+                    emojiDraft)
                 OutlinedTextField(pack, { pack = it },
                     label = { Text("Paquete") }, singleLine = true)
                 if (count > 1) Text("Se utilizará el nombre de cada archivo.",
                     color = Secondary, fontSize = 12.sp)
             }
         },
-        confirmButton = { Button(onClick = { onImport(name, tags, pack, emojis) }) { Text("Guardar") } },
+        confirmButton = { Button(onClick = {
+            onImport(name, mergeCapsules(tags, tagDraft.value), pack,
+                mergeCapsules(emojis, emojiDraft.value))
+        }) { Text("Guardar") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
 }
 
