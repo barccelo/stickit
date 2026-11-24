@@ -23,7 +23,7 @@ import java.io.FileOutputStream
  * compare WhatsApp's treatment of long GIFs. The short mode intentionally
  * clips and is only a diagnostic reference to the formerly working export.
  */
-internal enum class WebPPlaybackProfile {
+enum class WebPPlaybackProfile {
     WHATSAPP_COMPAT, HIGH_FPS, SHORT_REFERENCE
 }
 
