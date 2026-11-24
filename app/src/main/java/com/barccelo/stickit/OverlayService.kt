@@ -41,7 +41,7 @@ class OverlayService : Service() {
     private lateinit var windows: WindowManager
     private lateinit var store: StickerStore
     private var bubble: View? = null
-    private var panel: View? = null
+    private var pickerController: StickerFloatingPicker? = null
     private val preferences by lazy { getSharedPreferences("stickit_ui", Context.MODE_PRIVATE) }
 
     companion object {
@@ -55,6 +55,9 @@ class OverlayService : Service() {
         if (!Settings.canDrawOverlays(this)) { stopSelf(); return }
         windows = getSystemService(WINDOW_SERVICE) as WindowManager
         store = StickerStore(this)
+        pickerController = StickerFloatingPicker(
+            this, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, store
+        )
         startPersistentNotification()
         showBubble()
         preferences.edit().putBoolean("overlay_enabled", true).apply()
@@ -155,145 +158,22 @@ class OverlayService : Service() {
         windows.addView(button, params)
     }
 
-    private fun togglePanel() { if (panel == null) showPanel() else closePanel() }
-
-    private fun showPanel() {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            background = rounded(Color.WHITE, 22)
-            elevation = dp(16).toFloat()
+    private fun togglePanel() {
+        // When permission has been explicitly enabled, the accessibility
+        // window can appear at the height of the keyboard. Without it, use
+        // the regular application overlay as a manual fallback.
+        val accessible = StickerShortcutService.active()
+        if (accessible != null) accessible.togglePicker()
+        else {
+            val picker = pickerController ?: return
+            if (picker.isOpen) picker.hidePicker() else picker.showPicker()
         }
-        val toolbar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val title = TextView(this).apply {
-            text = "Stickit · Mis stickers"; textSize = 17f
-            setTextColor(Color.rgb(25, 26, 30)); gravity = Gravity.CENTER_VERTICAL
-        }
-        toolbar.addView(title, LinearLayout.LayoutParams(0, dp(46), 1f))
-        val close = TextView(this).apply {
-            text = "×"; textSize = 30f; setTextColor(Color.DKGRAY); gravity = Gravity.CENTER
-            setOnClickListener { closePanel() }
-            contentDescription = "Cerrar selector"
-        }
-        toolbar.addView(close, LinearLayout.LayoutParams(dp(45), dp(46)))
-        root.addView(toolbar)
-
-        val search = EditText(this).apply {
-            textSize = 15f
-            hint = "Buscar etiquetas, nombres o paquetes"
-            setSingleLine(true)
-            setPadding(dp(12), dp(4), dp(12), dp(4))
-            background = rounded(Color.rgb(242, 243, 246), 12)
-        }
-        root.addView(search, LinearLayout.LayoutParams(-1, dp(48)))
-        val scroll = ScrollView(this).apply { isFillViewport = false }
-        val grid = GridLayout(this).apply {
-            columnCount = 4
-            setPadding(0, dp(12), 0, dp(8))
-        }
-        scroll.addView(grid)
-        root.addView(scroll, LinearLayout.LayoutParams(-1, dp(276)))
-        val hint = TextView(this).apply {
-            text = "Toca para copiar · Mantén pulsada la burbuja para ocultarla"
-            textSize = 11f
-            setTextColor(Color.rgb(125, 129, 145))
-            gravity = Gravity.CENTER
-            setPadding(0, dp(8), 0, dp(6))
-        }
-        root.addView(hint)
-        val hide = TextView(this).apply {
-            text = "Ocultar selector"
-            textSize = 14f
-            setTextColor(Color.rgb(71, 83, 174))
-            gravity = Gravity.CENTER
-            background = rounded(Color.rgb(239, 241, 251), 14)
-            setOnClickListener { stopSelf() }
-        }
-        root.addView(hide, LinearLayout.LayoutParams(-1, dp(44)))
-
-        fun render(query: String) {
-            grid.removeAllViews()
-            val all = store.all()
-            val filtered = all.filter { it.matches(query) }
-                .sortedWith(compareByDescending<Sticker> { it.favorite }.thenByDescending { it.lastUsed })
-                .take(64)
-            val side = (resources.displayMetrics.widthPixels - dp(52)) / 4
-            for (sticker in filtered) {
-                val image = ImageView(this).apply {
-                    scaleType = ImageView.ScaleType.FIT_CENTER
-                    setPadding(dp(5), dp(5), dp(5), dp(5))
-                    background = rounded(Color.rgb(245, 246, 248), 9)
-                    contentDescription = sticker.name
-                    try {
-                        val drawable = ImageDecoder.decodeDrawable(
-                            ImageDecoder.createSource(store.stickerFile(sticker))
-                        )
-                        setImageDrawable(drawable)
-                        (drawable as? AnimatedImageDrawable)?.start()
-                    } catch (_: Exception) { }
-                    setOnClickListener {
-                        try {
-                            ClipboardBridge.copyGif(this@OverlayService, store.stickerFile(sticker))
-                            store.markUsed(sticker)
-                            Toast.makeText(this@OverlayService,
-                                "GIF copiado · pega en WhatsApp", Toast.LENGTH_SHORT).show()
-                            closePanel()
-                        } catch (e: Exception) {
-                            Toast.makeText(this@OverlayService,
-                                "No se pudo copiar: ${e.message}", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-                grid.addView(image, GridLayout.LayoutParams().apply {
-                    width = side; height = side
-                    setMargins(dp(2), dp(2), dp(2), dp(2))
-                })
-            }
-            if (filtered.isEmpty()) {
-                grid.addView(TextView(this).apply {
-                    text = "Sin resultados"; textSize = 15f
-                    setTextColor(Color.GRAY)
-                    setPadding(dp(10), dp(15), dp(10), dp(15))
-                })
-            }
-        }
-        render("")
-        search.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { render(s.toString()) }
-            override fun afterTextChanged(s: Editable?) = Unit
-        })
-
-        val params = WindowManager.LayoutParams(
-            resources.displayMetrics.widthPixels - dp(16),
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = dp(66)
-            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-        }
-        panel = root
-        try {
-            windows.addView(root, params)
-        } catch (e: Exception) {
-            panel = null
-            Toast.makeText(this, "No se pudo abrir el selector", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun closePanel() {
-        panel?.let {
-            try { windows.removeView(it) } catch (_: Exception) { }
-        }
-        panel = null
     }
 
     override fun onDestroy() {
         preferences.edit().putBoolean("overlay_enabled", false).apply()
-        closePanel()
+        pickerController?.dismiss()
+        pickerController = null
         bubble?.let { try { windows.removeView(it) } catch (_: Exception) { } }
         bubble = null
         super.onDestroy()

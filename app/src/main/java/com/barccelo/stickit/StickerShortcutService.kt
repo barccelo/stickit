@@ -51,6 +51,11 @@ class StickerShortcutService : AccessibilityService() {
         if (::picker.isInitialized) picker.showPicker()
     }
 
+    fun togglePicker() {
+        if (!::picker.isInitialized) return
+        if (picker.isOpen) picker.hidePicker() else picker.showPicker()
+    }
+
     fun closePicker() {
         if (::picker.isInitialized) picker.hidePicker()
     }
