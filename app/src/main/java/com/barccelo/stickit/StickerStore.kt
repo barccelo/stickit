@@ -137,6 +137,14 @@ class StickerStore(private val appContext: Context) :
         }
     }
 
+    fun restoreHistory(id: Long, createdAt: Long, lastUsed: Long, useCount: Int) {
+        writableDatabase.update("stickers", ContentValues().apply {
+            put("created_at", createdAt.coerceAtLeast(0L))
+            put("last_used", lastUsed.coerceAtLeast(0L))
+            put("use_count", useCount.coerceAtLeast(0))
+        }, "id=?", arrayOf(id.toString()))
+    }
+
     fun toggleFavorite(sticker: Sticker) {
         val values = ContentValues().apply { put("favorite", if (sticker.favorite) 0 else 1) }
         writableDatabase.update("stickers", values, "id=?", arrayOf(sticker.id.toString()))

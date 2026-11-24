@@ -66,6 +66,8 @@ object StickitBackup {
             row.put("media", "media/$id.gif")
             row.put("sha256", sha(source))
             row.put("created", sticker.createdAt)
+            row.put("lastUsed", sticker.lastUsed)
+            row.put("uses", sticker.uses)
             media.add("media/$id.gif" to source)
             val stem = File(sticker.fileName).nameWithoutExtension
             for (extension in listOf("source.gif", "source.webp", "unedited.gif")) {
@@ -178,6 +180,12 @@ object StickitBackup {
                     )
                     newIds.add(id)
                     if (row.optBoolean("favorite")) store.setFavorite(id, true)
+                    store.restoreHistory(
+                        id,
+                        row.optLong("created", System.currentTimeMillis()),
+                        row.optLong("lastUsed", 0L),
+                        row.optInt("uses", 0)
+                    )
                     val stem = destination.nameWithoutExtension
                     for ((key, extension) in listOf(
                         "source_gif" to "source.gif",
