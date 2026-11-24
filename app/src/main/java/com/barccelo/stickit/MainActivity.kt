@@ -238,8 +238,10 @@ class MainActivity : ComponentActivity() {
                         onImport = { name, tags, pack, emojis ->
                             pendingImport = emptyList()
                             runTask {
-                                var success = 0; var failed = 0
-                                sources.forEachIndexed { index, uri ->
+                                var success = 0
+                                var failed = 0
+                                var firstFailure: String? = null
+                                sources.forEach { uri ->
                                     var generated: File? = null
                                     try {
                                         generated = GifConverter.import(this, uri)
@@ -249,10 +251,18 @@ class MainActivity : ComponentActivity() {
                                     } catch (e: Exception) {
                                         generated?.delete()
                                         failed++
+                                        if (firstFailure == null) {
+                                            firstFailure = e.message?.take(180)
+                                                ?.takeIf { it.isNotBlank() }
+                                                ?: "No se pudo leer o convertir el archivo"
+                                        }
                                     }
                                 }
-                                if (success == 0) error("Ningún sticker se pudo importar")
-                                "$success guardados" + if (failed > 0) " · $failed omitidos" else ""
+                                if (success == 0) {
+                                    error("No se importó el sticker: ${firstFailure ?: "Error desconocido"}")
+                                }
+                                "$success guardados" + if (failed > 0)
+                                    " · $failed omitidos: ${firstFailure ?: "Error de formato"}" else ""
                             }
                         }
                     )
