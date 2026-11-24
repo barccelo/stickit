@@ -50,6 +50,18 @@ object StickitBackup {
         manifest.put("format", "stickit-library")
         manifest.put("version", 1)
         manifest.put("createdAt", System.currentTimeMillis())
+        // Preferences and shortcut phrases are included, but never the text
+        // detected in third-party apps (which Stickit does not record).
+        val preferences = JSONObject().apply {
+            put("phrases", JSONArray().also { values ->
+                ShortcutSettings.phrases(context).forEach(values::put)
+            })
+            put("suggestions", ShortcutSettings.suggestionsEnabled(context))
+            put("panelHeightDp", ShortcutSettings.panelHeightDp(context))
+            put("suggestX", ShortcutSettings.suggestX(context))
+            put("suggestY", ShortcutSettings.suggestY(context))
+        }
+        manifest.put("ui", preferences)
         val items = JSONArray()
         val media = ArrayList<Pair<String, File>>()
         val folder = File(context.filesDir, "stickers")
@@ -205,6 +217,23 @@ object StickitBackup {
                 }
                 existing.add(signature)
                 imported++
+            }
+            // Restore optional user configuration only after the library
+            // has been processed without errors. Older ZIPs remain supported.
+            index.optJSONObject("ui")?.let { ui ->
+                ui.optJSONArray("phrases")?.let { names ->
+                    val shortcuts = (0 until names.length().coerceAtMost(20))
+                        .map { names.optString(it) }
+                    ShortcutSettings.savePhrases(context, shortcuts)
+                }
+                if (ui.has("suggestions")) ShortcutSettings.setSuggestionsEnabled(
+                    context, ui.optBoolean("suggestions"))
+                if (ui.has("panelHeightDp")) ShortcutSettings.setPanelHeightDp(
+                    context, ui.optInt("panelHeightDp"))
+                if (ui.has("suggestX") && ui.has("suggestY")) {
+                    ShortcutSettings.saveSuggestionPosition(
+                        context, ui.optInt("suggestX"), ui.optInt("suggestY"))
+                }
             }
             return imported
         } catch (e: Exception) {

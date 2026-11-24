@@ -20,6 +20,21 @@ El acceso a **todos los paquetes instalados dentro de WhatsApp** no está dispon
 
 El formato de portapapeles GIF está sujeto al comportamiento de WhatsApp; la vista previa y la opción «enviar como sticker» pueden variar entre sus versiones. Por compatibilidad, la conversión de animaciones utiliza temporalmente un fragmento máximo de 2,4 segundos y aproximadamente 25 fotogramas por segundo. Se conserva una copia del archivo GIF o WebP original cuando la importación lo permite.
 
+## Selector al escribir y sugerencias
+
+- **Atajos:** abre **Ajustes → Atajos y sugerencias**. Puedes crear varios (por defecto `STK`). En una conversación de WhatsApp, escribir uno de esos códigos al final de una palabra abrirá Stickit.
+- **Permiso explícito:** en ese mismo apartado, selecciona **Habilitar atajos en Android**. Luego activa el servicio de accesibilidad **Stickit** en los ajustes del teléfono. No se activa sin tu autorización.
+- **Alcance restringido:** Stickit solo observa los cambios de texto de campos editables de WhatsApp y WhatsApp Business; ignora campos de contraseña. El análisis se hace en el dispositivo; no almacena los mensajes, palabras escritas ni pulsaciones.
+- **Coincidencias:** escribir las primeras **tres o más letras** de un nombre o etiqueta muestra una barra con stickers relacionados. También aparecen los stickers asociados a un emoji cuando lo escribes.
+- **Asociaciones:** abre **Editar sticker** para añadir múltiples etiquetas y emojis como cápsulas removibles. La barra de sugerencias utiliza los emojis asociados, no los inventa automáticamente.
+- **Selector ajustable:** el panel tiene el ancho del teclado y una altura configurable en Ajustes (230–540 dp); también se amplía o reduce arrastrando su asa superior. Las sugerencias se pueden mover desde el asa lateral y recuerdan su posición.
+- **Para usar un sticker:** toca su imagen; Stickit copia el GIF y cierra el panel. Después pégalo en WhatsApp. No envía mensajes automáticamente y no borra el código que hayas escrito.
+- **Sin accesibilidad:** puedes seguir usando el selector flotante manual y la aplicación normalmente. El atajo y las sugerencias automáticas no funcionan sin el servicio opcional.
+
+En algunos dispositivos Android, la instalación externa de una APK puede exigir habilitar antes **Permitir ajustes restringidos** desde la ficha de información de Stickit. Esto depende de la versión del sistema y de cómo se instaló la aplicación. El acceso es sensible: actívalo solo si comprendes el permiso de lectura de campos de texto que concede Android.
+
+El respaldo ZIP ahora también contiene los atajos y ajustes de presentación, además de stickers, etiquetas, paquetes y favoritos. Los respaldos anteriores siguen siendo compatibles.
+
 ## Actualizaciones mediante Obtainium
 
 Repositorio y fuente: `https://github.com/barccelo/stickit`.
