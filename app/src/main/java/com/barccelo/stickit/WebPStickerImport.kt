@@ -66,11 +66,15 @@ internal object WebPStickerImport {
                             "No se pudo leer un fotograma al convertir el WebP"
                         )
                     if (sourceIndex == frames[written].sourceIndex) {
-                        gif.frame(
-                            square(bitmap),
-                            frames[written].delayCentiseconds
-                        )
-                        written++
+                        // A low-fps WebP may require several 40-ms output
+                        // frames to preserve the same wall-clock duration.
+                        // Reuse the decoded pixels before advancing libwebp.
+                        val pixels = square(bitmap)
+                        while (written < frames.size &&
+                            frames[written].sourceIndex == sourceIndex) {
+                            gif.frame(pixels, frames[written].delayCentiseconds)
+                            written++
+                        }
                     }
                     sourceIndex++
                 }
