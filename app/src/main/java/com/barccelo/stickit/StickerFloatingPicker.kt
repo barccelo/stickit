@@ -123,6 +123,10 @@ class StickerFloatingPicker(
             }
         }
         val height = ShortcutSettings.panelHeightDp(context)
+        val maxHeightDp = (unDp(context.resources.displayMetrics.heightPixels) - 48)
+            .coerceAtLeast(540)
+        var normalHeightDp = height
+        var expanded = false
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             dp(height),
@@ -155,28 +159,69 @@ class StickerFloatingPicker(
                 setOnClickListener { callback() }
             }, LinearLayout.LayoutParams(dp(42), dp(38)))
         }
+        val expandButton = label("⤢", 22f, accent).apply {
+            gravity = Gravity.CENTER
+            contentDescription = "Expandir selector casi a pantalla completa"
+        }
+        fun setExpanded(value: Boolean) {
+            if (value == expanded && params.height ==
+                dp(if (value) maxHeightDp else normalHeightDp)) return
+            if (value && !expanded) {
+                normalHeightDp = unDp(params.height).coerceIn(230, 540)
+            }
+            expanded = value
+            params.height = dp(if (expanded) maxHeightDp else normalHeightDp)
+            expandButton.text = if (expanded) "⤡" else "⤢"
+            expandButton.contentDescription = if (expanded)
+                "Restaurar tamaño del selector" else "Expandir selector casi a pantalla completa"
+            try { windows.updateViewLayout(root, params) } catch (_: Exception) {}
+        }
         var showQuickCreation: (() -> Unit)? = null
         action("⊕", "Abrir opciones de creación") { showQuickCreation?.invoke() }
+        header.addView(expandButton, LinearLayout.LayoutParams(dp(42), dp(38)))
+        expandButton.setOnClickListener { setExpanded(!expanded) }
         action("×", "Cerrar selector") { hidePicker() }
         root.addView(header)
         var startY = 0f
         var startHeight = 0
+        var startedExpanded = false
         handle.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     startY = event.rawY
                     startHeight = unDp(params.height)
+                    startedExpanded = expanded
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val delta = unDp((startY - event.rawY).roundToInt())
-                    val newSize = (startHeight + delta).coerceIn(230, 540)
-                    params.height = dp(newSize)
-                    try { windows.updateViewLayout(root, params) } catch (_: Exception) {}
+                    if (!startedExpanded) {
+                        val delta = unDp((startY - event.rawY).roundToInt())
+                        val newSize = (startHeight + delta).coerceIn(230, maxHeightDp)
+                        params.height = dp(newSize)
+                        try { windows.updateViewLayout(root, params) } catch (_: Exception) {}
+                    }
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    ShortcutSettings.setPanelHeightDp(context, unDp(params.height))
+                    val delta = unDp((startY - event.rawY).roundToInt())
+                    when {
+                        startedExpanded -> {
+                            if (delta < -70) setExpanded(false)
+                            else setExpanded(true)
+                        }
+                        delta > 70 -> {
+                            // Preserve the previous compact height, not the
+                            // intermediate drag height, for later restoration.
+                            params.height = dp(startHeight)
+                            setExpanded(true)
+                        }
+                        else -> {
+                            normalHeightDp = unDp(params.height).coerceIn(230, 540)
+                            params.height = dp(normalHeightDp)
+                            try { windows.updateViewLayout(root, params) } catch (_: Exception) {}
+                            ShortcutSettings.setPanelHeightDp(context, normalHeightDp)
+                        }
+                    }
                     true
                 }
                 else -> false

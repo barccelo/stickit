@@ -5,6 +5,9 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
+import androidx.core.content.ContextCompat
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -43,6 +46,17 @@ class OverlayService : Service() {
     private lateinit var store: StickerStore
     private var bubble: View? = null
     private var pickerController: StickerFloatingPicker? = null
+    private var homeReceiverRegistered = false
+    private val homeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != Intent.ACTION_CLOSE_SYSTEM_DIALOGS) return
+            val reason = intent.getStringExtra("reason").orEmpty()
+            if (reason == "homekey" || reason == "recentapps") {
+                pickerController?.dismiss()
+                StickerShortcutService.active()?.closePicker()
+            }
+        }
+    }
     private val preferences by lazy { getSharedPreferences("stickit_ui", Context.MODE_PRIVATE) }
 
     companion object {
@@ -65,6 +79,14 @@ class OverlayService : Service() {
         pickerController = StickerFloatingPicker(
             this, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, store
         )
+        // Supplement accessibility window changes on devices that still emit
+        // a system-dialog closing broadcast for Home/Recents.
+        try {
+            ContextCompat.registerReceiver(this, homeReceiver,
+                IntentFilter(Intent.ACTION_CLOSE_SYSTEM_DIALOGS),
+                ContextCompat.RECEIVER_EXPORTED)
+            homeReceiverRegistered = true
+        } catch (_: Exception) { }
         startPersistentNotification()
         showBubble()
         preferences.edit().putBoolean("overlay_enabled", true).apply()
@@ -185,6 +207,10 @@ class OverlayService : Service() {
     }
 
     override fun onDestroy() {
+        if (homeReceiverRegistered) {
+            try { unregisterReceiver(homeReceiver) } catch (_: Exception) { }
+            homeReceiverRegistered = false
+        }
         if (active?.get() === this) active = null
         preferences.edit().putBoolean("overlay_enabled", false).apply()
         pickerController?.dismiss()
