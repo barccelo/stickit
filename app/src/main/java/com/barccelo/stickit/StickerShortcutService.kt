@@ -37,6 +37,17 @@ class StickerShortcutService : AccessibilityService() {
     private lateinit var picker: StickerFloatingPicker
     private lateinit var store: StickerStore
     private var shortcutArmed = true
+    private var catalogCache: List<Sticker> = emptyList()
+    private var reloadAfter = 0L
+
+    private fun catalog(): List<Sticker> {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now >= reloadAfter) {
+            catalogCache = store.all()
+            reloadAfter = now + 3000L
+        }
+        return catalogCache
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -98,10 +109,17 @@ class StickerShortcutService : AccessibilityService() {
             return
         }
 
-        val catalog = store.all()
-        val linked = catalog.asSequence().flatMap { it.emojiList().asSequence() }.distinct().toList()
+        val potentialWord = InputTriggerMatcher.trailingWord(suffix)
+        // Avoid even querying the local library for single-character typing.
+        if (potentialWord == null && suffix.lastOrNull()?.isLetterOrDigit() == true) {
+            picker.hideSuggestions()
+            return
+        }
+        val catalog = catalog()
+        val linked = catalog.asSequence().flatMap { it.emojiList().asSequence() }
+            .distinct().toList()
         val emoji = InputTriggerMatcher.emoji(suffix, linked)
-        val word = if (emoji == null) InputTriggerMatcher.trailingWord(suffix) else null
+        val word = if (emoji == null) potentialWord else null
         val matches = when {
             emoji != null -> catalog.filter { emoji in it.emojiList() }
             word != null -> catalog.filter { sticker ->
