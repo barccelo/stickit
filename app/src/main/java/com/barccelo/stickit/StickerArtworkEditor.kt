@@ -45,11 +45,35 @@ object StickerArtworkEditor {
         require(changes.zoom in 1f..2.5f && changes.rotate % 90 == 0 &&
             changes.crop.valid())
         require(file.exists() && file.length() <= 25_000_000) { "Archivo GIF no válido" }
+        // Opening the editor and pressing Save with no visual changes must
+        // never decode/re-encode the file. This protects precise frame timing,
+        // colors and the original source from unnecessary lossy generations.
+        if (changes.caption.isBlank() && changes.zoom == 1f &&
+            changes.rotate == 0 && !changes.mirror &&
+            changes.crop == StickerCropArea()) return
         val input = file.readBytes()
         val header = GifHeaderParser().setData(ByteBuffer.wrap(input)).parseHeader()
         val delays = GifFrameTiming.delaysCentiseconds(input)
         require(header.numFrames in 1..350 && delays.size == header.numFrames) {
             "No se puede editar esta animación"
+        }
+        // Older saved GIFs may contain 20-ms frames. Do not propagate those
+        // player-dependent delays when actually editing their pixels.
+        // Retain the original cadence for files already using safe delays.
+        val outputFrames = if (delays.all { it >= 4 }) {
+            delays.mapIndexed { index, delay ->
+                WebPFrameTiming.OutputFrame(index, delay)
+            }
+        } else {
+            var endMs = 0L
+            val ends = delays.map { delay ->
+                endMs += GifFrameTiming.sourceDelayMs(delay).toLong()
+                require(endMs <= WebPFrameTiming.MAX_DURATION_MS) {
+                    "La animación editada supera 30 segundos"
+                }
+                endMs.toInt()
+            }
+            WebPFrameTiming.plan(ends)
         }
         val tmp = File(file.parentFile, file.nameWithoutExtension + ".editing.gif")
         val undo = File(file.parentFile, file.nameWithoutExtension + ".unedited.gif")
@@ -57,12 +81,25 @@ object StickerArtworkEditor {
         try {
             FileOutputStream(tmp).use { output ->
                 val writer = GifWriter(output)
+                var outputIndex = 0
                 for (i in 0 until header.numFrames) {
                     decoder.advance()
                     val frame = decoder.nextFrame ?: error("No se pudo leer el fotograma")
                     try {
-                        writer.frame(render(frame, changes), delays[i].coerceAtLeast(2))
+                        if (outputIndex < outputFrames.size &&
+                            outputFrames[outputIndex].sourceIndex == i) {
+                            val pixels = render(frame, changes)
+                            while (outputIndex < outputFrames.size &&
+                                outputFrames[outputIndex].sourceIndex == i) {
+                                writer.frame(pixels,
+                                    outputFrames[outputIndex].delayCentiseconds)
+                                outputIndex++
+                            }
+                        }
                     } finally { frame.recycle() }
+                }
+                require(outputIndex == outputFrames.size) {
+                    "No se generaron todos los fotogramas de la edición"
                 }
                 writer.finish()
             }
