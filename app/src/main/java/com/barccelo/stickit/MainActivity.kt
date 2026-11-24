@@ -12,6 +12,7 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,10 +29,16 @@ private val StickitInk = Color(0xFF1D2233)
  * ZIP backup are user-initiated Storage Access Framework operations.
  */
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val ACTION_QUICK_IMPORT = "com.barccelo.stickit.QUICK_IMPORT"
+    }
     private lateinit var store: StickerStore
     private val worker = Executors.newSingleThreadExecutor()
 
     private var entries by mutableStateOf<List<Sticker>>(emptyList())
+    private var packNames by mutableStateOf<List<String>>(emptyList())
+    private var themeMode by mutableIntStateOf(AppearanceSettings.SYSTEM)
+    private var pendingPackLink by mutableStateOf<String?>(null)
     private var overlayActive by mutableStateOf(false)
     private var busy by mutableStateOf(false)
     private var previewVersion by mutableIntStateOf(0)
@@ -76,19 +83,60 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = StickerStore(this)
+        themeMode = AppearanceSettings.mode(this)
         refreshShortcutSettings()
         refresh()
         processShareIntent(intent)
         setContent {
-            MaterialTheme(colorScheme = lightColorScheme(
+            val systemDark = isSystemInDarkTheme()
+            val dark = themeMode == AppearanceSettings.DARK ||
+                (themeMode == AppearanceSettings.SYSTEM && systemDark)
+            val colors = if (dark) darkColorScheme(
+                primary = Color(0xFFAEBBFF), onPrimary = Color(0xFF182350),
+                secondary = Color(0xFFAEBBFF), background = Color(0xFF10121B),
+                surface = Color(0xFF1B1E29), onSurface = Color(0xFFF3F3FA),
+                surfaceVariant = Color(0xFF292D3B),
+                onSurfaceVariant = Color(0xFFB4BBD0),
+                outlineVariant = Color(0xFF3C4254),
+                secondaryContainer = Color(0xFF303758),
+                tertiary = Color(0xFFE8BE75)
+            ) else lightColorScheme(
                 primary = StickitIndigo, onPrimary = Color.White,
                 secondary = StickitIndigo, background = Color(0xFFFAFAFC),
-                surface = Color.White, onSurface = StickitInk
-            )) {
+                surface = Color.White, onSurface = StickitInk,
+                surfaceVariant = Color(0xFFF1F2F8),
+                onSurfaceVariant = Color(0xFF80889A),
+                outlineVariant = Color(0xFFE8EAF2),
+                secondaryContainer = Color(0xFFEDEFFC),
+                tertiary = Color(0xFFCE9A39)
+            )
+            MaterialTheme(colorScheme = colors) {
                 StickitHome(
-                    stickers = entries, fileOf = { store.stickerFile(it) },
+                    stickers = entries,
+                    packs = packNames,
+                    onCreatePack = { name ->
+                        runTask { store.createPack(name); "Paquete creado." }
+                    },
+                    onRenamePack = { old, name ->
+                        runTask { store.renamePack(old, name); "Paquete renombrado." }
+                    },
+                    onMovePack = { name, delta ->
+                        runTask { store.movePack(name, delta); "Orden de paquetes actualizado." }
+                    },
+                    onDeletePack = { name, deleteContents ->
+                        runTask {
+                            store.deletePack(name, deleteContents)
+                            "Paquete eliminado."
+                        }
+                    },
+                    fileOf = { store.stickerFile(it) },
                     previewVersion = previewVersion,
                     busy = busy, overlayEnabled = overlayActive,
+                    themeMode = themeMode,
+                    onChangeTheme = { mode ->
+                        themeMode = mode
+                        AppearanceSettings.save(this, mode)
+                    },
                     shortcutEnabled = shortcutEnabled,
                     shortcutPhrases = shortcutPhrases,
                     emojiSuggestions = emojiSuggestions,
@@ -142,6 +190,42 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 )
+
+                val sharedLink = pendingPackLink
+                if (sharedLink != null) {
+                    AlertDialog(
+                        onDismissRequest = { pendingPackLink = null },
+                        title = { Text("Paquete compartido por WhatsApp") },
+                        text = {
+                            Text("WhatsApp ha compartido un enlace al paquete, no sus archivos. " +
+                                "Stickit no puede descargar directamente un paquete privado " +
+                                "desde ese enlace. Puedes abrirlo en WhatsApp o importar el ZIP " +
+                                "exportado del paquete desde Stickit.")
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                val url = sharedLink
+                                pendingPackLink = null
+                                try {
+                                    val uri = Uri.parse(url)
+                                    val host = uri.host.orEmpty().lowercase()
+                                    if (uri.scheme == "https" &&
+                                        (host == "wa.me" || host == "whatsapp.com" ||
+                                            host.endsWith(".whatsapp.com"))) {
+                                        startActivity(Intent(Intent.ACTION_VIEW, uri))
+                                    } else notify("El enlace no es de WhatsApp")
+                                } catch (_: Exception) {
+                                    notify("No se pudo abrir el enlace")
+                                }
+                            }) { Text("Abrir en WhatsApp") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { pendingPackLink = null }) {
+                                Text("Cerrar")
+                            }
+                        }
+                    )
+                }
 
                 if (pendingImport.isNotEmpty()) {
                     val sources = pendingImport
@@ -253,6 +337,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        if (intent?.action == ACTION_QUICK_IMPORT) {
+            window.decorView.post {
+                mediaPicker.launch(arrayOf("image/*", "video/*"))
+            }
+        }
     }
 
     override fun onResume() {
@@ -260,13 +349,16 @@ class MainActivity : ComponentActivity() {
         overlayActive = getSharedPreferences("stickit_ui", Context.MODE_PRIVATE)
             .getBoolean("overlay_enabled", false)
         refreshShortcutSettings()
+        themeMode = AppearanceSettings.mode(this)
         if (::store.isInitialized) refresh()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        processShareIntent(intent)
+        if (intent.action == ACTION_QUICK_IMPORT) {
+            window.decorView.post { mediaPicker.launch(arrayOf("image/*", "video/*")) }
+        } else processShareIntent(intent)
     }
 
     private fun processShareIntent(intent: Intent?) {
@@ -293,7 +385,41 @@ class MainActivity : ComponentActivity() {
                 for (i in 0 until clips.itemCount) clips.getItemAt(i).uri?.let { received.add(it) }
             }
         }
-        if (received.isNotEmpty()) pendingImport = received.distinct().take(100)
+        if (received.isNotEmpty()) {
+            val unique = received.distinct().take(100)
+            val packages = unique.filter(::isZipContent)
+            if (packages.size == 1 && unique.size == 1) {
+                pendingZip = packages.first()
+            } else {
+                pendingImport = unique.filterNot(::isZipContent)
+                if (packages.isNotEmpty()) {
+                    notify("Selecciona un ZIP de paquete a la vez para importarlo.")
+                }
+            }
+            return
+        }
+        val message = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
+        val link = Regex("https://(?:[a-zA-Z0-9-]+\\.)*(?:whatsapp\\.com|wa\\.me)/[^\\s]+",
+            RegexOption.IGNORE_CASE).find(message)?.value
+        if (link != null) pendingPackLink = link
+        else if (intent.action == Intent.ACTION_SEND && message.isNotBlank()) {
+            notify("WhatsApp compartió texto, no archivos de stickers.")
+        }
+    }
+
+    private fun isZipContent(uri: Uri): Boolean {
+        try {
+            contentResolver.openInputStream(uri).use { input ->
+                val bytes = ByteArray(4)
+                if (input != null && input.read(bytes) == 4) {
+                    return bytes[0] == 'P'.code.toByte() &&
+                        bytes[1] == 'K'.code.toByte() &&
+                        bytes[2] == 3.toByte() &&
+                        bytes[3] == 4.toByte()
+                }
+            }
+        } catch (_: Exception) {}
+        return contentResolver.getType(uri).orEmpty().contains("zip", ignoreCase = true)
     }
 
     private fun nameOf(uri: Uri): String {
@@ -322,7 +448,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun refresh() { entries = store.all() }
+    private fun refresh() {
+        entries = store.all()
+        packNames = store.packNames()
+    }
 
     private fun refreshShortcutSettings() {
         shortcutEnabled = StickerShortcutService.isEnabled(this)
