@@ -93,7 +93,15 @@ class StickerFloatingPicker(
     fun showPicker() {
         hideSuggestions()
         if (picker != null) return
-        val root = LinearLayout(context).apply {
+        val root = object : LinearLayout(context) {
+            override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+                if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+                    hidePicker()
+                    return true
+                }
+                return super.dispatchTouchEvent(event)
+            }
+        }.apply {
             orientation = LinearLayout.VERTICAL
             background = shape(panelBg, 24, edge)
             setPadding(dp(12), dp(6), dp(12), dp(10))
