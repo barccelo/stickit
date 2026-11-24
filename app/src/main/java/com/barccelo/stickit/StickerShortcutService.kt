@@ -3,6 +3,8 @@ package com.barccelo.stickit
 import android.accessibilityservice.AccessibilityService
 import android.content.ComponentName
 import android.content.Context
+import android.os.Bundle
+import android.view.accessibility.AccessibilityNodeInfo
 import android.provider.Settings
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
@@ -71,14 +73,51 @@ class StickerShortcutService : AccessibilityService() {
         if (::picker.isInitialized) picker.hidePicker()
     }
 
+    /**
+     * Delete only the exact emoji that generated the suggestion. A focused
+     * editable WhatsApp field and a cursor at the end are mandatory. No chat
+     * history is stored; the operation runs only after the user taps a sticker.
+     */
+    private fun removeSuggestedEmoji(emoji: String): Boolean {
+        if (emoji.isBlank()) return false
+        val editor = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            ?: return false
+        if (!ShortcutSettings.isAllowedApp(editor.packageName) ||
+            !editor.isEditable || editor.isPassword || !editor.isFocused) return false
+        val content = editor.text?.toString() ?: return false
+        if (!content.endsWith(emoji) ||
+            editor.textSelectionStart != content.length ||
+            editor.textSelectionEnd != content.length) return false
+        val trimmed = content.dropLast(emoji.length)
+        val args = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                trimmed)
+        }
+        return editor.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null || !::picker.isInitialized) return
-        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            val top = rootInActiveWindow?.packageName
-            if (top != null && !ShortcutSettings.isAllowedApp(top) &&
-                top.toString() != packageName) {
-                picker.hideSuggestions()
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+            event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+            val target = event.packageName?.toString().orEmpty()
+            // Recents/overview is hosted by Samsung One UI Home or SystemUI.
+            // Hide the full picker instead of leaving it over task thumbnails.
+            val overviewHost = target in setOf(
+                "com.sec.android.app.launcher", "com.android.systemui",
+                "com.android.launcher3", "com.google.android.apps.nexuslauncher"
+            )
+            if (overviewHost) {
+                picker.dismiss()
                 shortcutArmed = true
+            } else if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                val top = rootInActiveWindow?.packageName
+                if (top != null && !ShortcutSettings.isAllowedApp(top) &&
+                    top.toString() != packageName &&
+                    target != "com.google.android.inputmethod.latin") {
+                    picker.hideSuggestions()
+                    shortcutArmed = true
+                }
             }
             return
         }
@@ -134,7 +173,8 @@ class StickerShortcutService : AccessibilityService() {
             .thenByDescending { it.uses })
             .take(5)
         if (matches.isEmpty()) picker.hideSuggestions()
-        else picker.showSuggestions(emoji ?: word ?: "", matches)
+        else picker.showSuggestions(emoji ?: word ?: "", matches,
+            if (emoji != null) ({ removeSuggestedEmoji(emoji) }) else null)
     }
 
     override fun onInterrupt() {
