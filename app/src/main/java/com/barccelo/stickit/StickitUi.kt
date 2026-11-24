@@ -120,7 +120,8 @@ private fun StickerTile(
                     }
                 }
             }
-            Text(sticker.tags.ifBlank { sticker.pack }, color = Secondary, fontSize = 11.sp,
+            Text(listOf(sticker.emojis, sticker.tags.ifBlank { sticker.pack })
+                .filter { it.isNotBlank() }.joinToString(" · "), color = Secondary, fontSize = 11.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -133,6 +134,16 @@ fun StickitHome(
     previewVersion: Int,
     busy: Boolean,
     overlayEnabled: Boolean,
+    shortcutEnabled: Boolean,
+    shortcutPhrases: List<String>,
+    emojiSuggestions: Boolean,
+    pickerHeight: Int,
+    onEnableShortcuts: () -> Unit,
+    onAddShortcut: (String) -> Unit,
+    onRemoveShortcut: (String) -> Unit,
+    onToggleSuggestions: (Boolean) -> Unit,
+    onChangePickerHeight: (Int) -> Unit,
+    onShowPicker: () -> Unit,
     onToggleOverlay: (Boolean) -> Unit,
     onPick: () -> Unit,
     onPaste: () -> Unit,
@@ -406,6 +417,96 @@ fun StickitHome(
                             }
                         }
                         item {
+                            SettingsPanel("Atajos y sugerencias",
+                                "Abre el selector escribiendo un código o encuentra stickers mediante emojis") {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Outlined.Keyboard, null, tint = Indigo)
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Detección de atajos", fontWeight = FontWeight.SemiBold,
+                                            color = Ink, fontSize = 13.sp)
+                                        Text(if (shortcutEnabled) "Habilitada en WhatsApp"
+                                            else "Requiere activación manual",
+                                            color = Secondary, fontSize = 11.sp)
+                                    }
+                                    if (shortcutEnabled) Icon(Icons.Filled.CheckCircle,
+                                        contentDescription = "Activado", tint = Indigo)
+                                }
+                                OutlinedButton(onClick = onEnableShortcuts,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(13.dp)) {
+                                    Text(if (shortcutEnabled) "Configurar permiso de accesibilidad"
+                                        else "Habilitar atajos en Android")
+                                }
+                                Text("Se revisan únicamente los finales de los mensajes que escribes en WhatsApp y WhatsApp Business. No se guardan mensajes ni contraseñas.",
+                                    color = Secondary, fontSize = 11.sp, lineHeight = 16.sp)
+                                Text("Mis atajos", color = Ink, fontWeight = FontWeight.Medium,
+                                    fontSize = 13.sp)
+                                var newShortcut by remember { mutableStateOf("") }
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    shortcutPhrases.forEach { phrase ->
+                                        InputChip(selected = false,
+                                            onClick = { onRemoveShortcut(phrase) },
+                                            label = { Text(phrase, fontSize = 12.sp) },
+                                            trailingIcon = {
+                                                Icon(Icons.Outlined.Close,
+                                                    contentDescription = "Quitar atajo $phrase",
+                                                    modifier = Modifier.size(15.dp))
+                                            },
+                                            shape = RoundedCornerShape(50))
+                                    }
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedTextField(value = newShortcut,
+                                        onValueChange = { newShortcut = it.take(20) },
+                                        label = { Text("Nuevo atajo") },
+                                        placeholder = { Text("STK, PEG, /stick") },
+                                        singleLine = true, modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(13.dp))
+                                    FilledIconButton(
+                                        enabled = newShortcut.trim().length >= 2 &&
+                                            shortcutPhrases.size < 20,
+                                        onClick = {
+                                            onAddShortcut(newShortcut)
+                                            newShortcut = ""
+                                        }
+                                    ) {
+                                        Icon(Icons.Outlined.Add, contentDescription = "Añadir atajo")
+                                    }
+                                }
+                                Text("Los códigos se detectan al final de una palabra; puedes tener varios. El texto escrito permanece en el chat.",
+                                    color = Secondary, fontSize = 11.sp, lineHeight = 16.sp)
+                                HorizontalDivider(color = Stroke)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Sugerencias por emoji", color = Ink,
+                                            fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                        Text("Barra arrastrable sobre el teclado",
+                                            color = Secondary, fontSize = 11.sp)
+                                    }
+                                    Switch(checked = emojiSuggestions, onCheckedChange = onToggleSuggestions)
+                                }
+                                HorizontalDivider(color = Stroke)
+                                Text("Altura del selector · $pickerHeight dp", color = Ink,
+                                    fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                Slider(value = pickerHeight.toFloat(),
+                                    onValueChange = { onChangePickerHeight(it.toInt()) },
+                                    valueRange = 230f..540f)
+                                Text("También podrás cambiar su tamaño arrastrando el borde superior. Ocupa el ancho del teclado y desaparece después de copiar.",
+                                    color = Secondary, fontSize = 11.sp, lineHeight = 16.sp)
+                                OutlinedButton(onClick = onShowPicker,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(13.dp)) {
+                                    Icon(Icons.Outlined.OpenInFull, null,
+                                        modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Abrir selector de prueba")
+                                }
+                            }
+                        }
+                        item {
                             SettingsPanel("Mis colecciones", "Importa paquetes que hayas descargado o exportado") {
                                 OutlinedButton(onClick = onZip,
                                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
@@ -512,15 +613,67 @@ private fun SettingsPanel(title: String, subtitle: String,
     }
 }
 
+/**
+ * Compact removable capsules. The input is committed as one or more tokens
+ * when the user taps +; editing never alters another sticker.
+ */
+@Composable
+fun CapsuleEditor(title: String, tokens: String, onChange: (String) -> Unit,
+    placeholder: String) {
+    var draft by remember { mutableStateOf("") }
+    val chips = tokens.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    fun commit() {
+        val additions = draft.split(",").map { it.trim() }
+            .filter { it.isNotEmpty() && it.length <= 32 }
+        if (additions.isNotEmpty()) {
+            onChange((chips + additions).distinctBy(String::lowercase).joinToString(", "))
+            draft = ""
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, color = Ink, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        if (chips.isNotEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                chips.forEach { chip ->
+                    InputChip(selected = false,
+                        onClick = { onChange(chips.filterNot { it == chip }.joinToString(", ")) },
+                        label = { Text(chip, fontSize = 12.sp) },
+                        trailingIcon = {
+                            Icon(Icons.Outlined.Close, contentDescription = "Quitar $chip",
+                                modifier = Modifier.size(14.dp))
+                        },
+                        shape = RoundedCornerShape(50))
+                }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(value = draft, onValueChange = {
+                draft = it.take(90)
+                if (draft.endsWith(",")) commit()
+            },
+                placeholder = { Text(placeholder, fontSize = 11.sp) },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(13.dp))
+            FilledIconButton(onClick = { commit() }, enabled = draft.isNotBlank()) {
+                Icon(Icons.Outlined.Add, contentDescription = "Añadir $title")
+            }
+        }
+    }
+}
+
 @Composable
 fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean, canUndo: Boolean,
     onDismiss: () -> Unit,
-    onSave: (String, String, String) -> Unit,
+    onSave: (String, String, String, String) -> Unit,
     onArtwork: () -> Unit, onReprocess: () -> Unit, onUndo: () -> Unit,
     onDelete: () -> Unit
 ) {
     var name by remember(sticker.id) { mutableStateOf(sticker.name) }
     var tags by remember(sticker.id) { mutableStateOf(sticker.tags) }
+    var emojis by remember(sticker.id) { mutableStateOf(sticker.emojis) }
     var pack by remember(sticker.id) { mutableStateOf(sticker.pack) }
     var deletion by remember { mutableStateOf(false) }
     if (deletion) {
@@ -536,8 +689,10 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean, canUndo: Bool
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(value = name, onValueChange = { name = it },
                         singleLine = true, label = { Text("Nombre") })
-                    OutlinedTextField(value = tags, onValueChange = { tags = it },
-                        label = { Text("Etiquetas, separadas por comas") })
+                    CapsuleEditor("Etiquetas", tags, { tags = it },
+                        "Ej.: bravo, meme, amarillo")
+                    CapsuleEditor("Emojis asociados", emojis, { emojis = it },
+                        "Ej.: 😂, 😡, ❤️")
                     OutlinedTextField(value = pack, onValueChange = { pack = it },
                         singleLine = true, label = { Text("Paquete") })
                     OutlinedButton(onClick = onArtwork, modifier = Modifier.fillMaxWidth()) {
@@ -556,16 +711,17 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean, canUndo: Bool
                     }
                 }
             },
-            confirmButton = { Button(onClick = { onSave(name, tags, pack) }) { Text("Guardar") } },
+            confirmButton = { Button(onClick = { onSave(name, tags, pack, emojis) }) { Text("Guardar") } },
             dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
     }
 }
 
 @Composable
 fun ImportStickersDialog(count: Int, suggestedName: String,
-    onDismiss: () -> Unit, onImport: (String, String, String) -> Unit) {
+    onDismiss: () -> Unit, onImport: (String, String, String, String) -> Unit) {
     var name by remember { mutableStateOf(suggestedName) }
     var tags by remember { mutableStateOf("") }
+    var emojis by remember { mutableStateOf("") }
     var pack by remember { mutableStateOf("General") }
     AlertDialog(onDismissRequest = onDismiss,
         title = { Text(if (count == 1) "Guardar sticker" else "Importar $count stickers") },
@@ -573,15 +729,15 @@ fun ImportStickersDialog(count: Int, suggestedName: String,
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (count == 1) OutlinedTextField(name, { name = it },
                     label = { Text("Nombre") }, singleLine = true)
-                OutlinedTextField(tags, { tags = it },
-                    label = { Text("Etiquetas (opcional)") })
+                CapsuleEditor("Etiquetas", tags, { tags = it }, "Ej.: risa, reacción")
+                CapsuleEditor("Emojis", emojis, { emojis = it }, "Ej.: 😂, ❤️")
                 OutlinedTextField(pack, { pack = it },
                     label = { Text("Paquete") }, singleLine = true)
                 if (count > 1) Text("Se utilizará el nombre de cada archivo.",
                     color = Secondary, fontSize = 12.sp)
             }
         },
-        confirmButton = { Button(onClick = { onImport(name, tags, pack) }) { Text("Guardar") } },
+        confirmButton = { Button(onClick = { onImport(name, tags, pack, emojis) }) { Text("Guardar") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
 }
 
