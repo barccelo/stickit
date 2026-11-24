@@ -356,6 +356,7 @@ class MainActivity : ComponentActivity() {
                     busy = false
                     previewVersion++
                     refresh()
+                    refreshShortcutSettings()
                     notify(message)
                 }
             } catch (e: Exception) {
