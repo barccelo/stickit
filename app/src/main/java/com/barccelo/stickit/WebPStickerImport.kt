@@ -18,12 +18,22 @@ import java.io.FileOutputStream
  * The two passes extract exact cumulative end timestamps and then encode
  * frame content. No source frame is stored or recycled by this class.
  */
+/**
+ * Explicit A/B modes preserve the original source and allow the user to
+ * compare WhatsApp's treatment of long GIFs. The short mode intentionally
+ * clips and is only a diagnostic reference to the formerly working export.
+ */
+internal enum class WebPPlaybackProfile {
+    WHATSAPP_COMPAT, HIGH_FPS, SHORT_REFERENCE
+}
+
 internal object WebPStickerImport {
     fun convert(
         context: Context,
         uri: Uri,
         destination: File,
-        square: (Bitmap) -> IntArray
+        square: (Bitmap) -> IntArray,
+        profile: WebPPlaybackProfile = WebPPlaybackProfile.WHATSAPP_COMPAT
     ) {
         val decoder = WebPDecoder(context)
         try {
@@ -50,7 +60,18 @@ internal object WebPStickerImport {
                 }
             }
 
-            val frames = WebPFrameTiming.plan(frameEndTimes)
+            val frames = when (profile) {
+                WebPPlaybackProfile.WHATSAPP_COMPAT ->
+                    WebPFrameTiming.plan(frameEndTimes,
+                        WebPFrameTiming.COMPAT_FRAME_CAP)
+                WebPPlaybackProfile.HIGH_FPS ->
+                    WebPFrameTiming.plan(frameEndTimes,
+                        WebPFrameTiming.SMOOTH_FRAME_CAP)
+                WebPPlaybackProfile.SHORT_REFERENCE ->
+                    WebPFrameTiming.plan(frameEndTimes,
+                        WebPFrameTiming.COMPAT_FRAME_CAP,
+                        WebPFrameTiming.SHORT_REFERENCE_MS)
+            }
             decoder.reset()
 
             // Pass 2: use the same decoder-owned reusable bitmap. The
