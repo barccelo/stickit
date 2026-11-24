@@ -87,3 +87,9 @@ El decodificador nativo de WebP reutiliza el mismo objeto `Bitmap` al avanzar de
 - **Respaldo local:** preserva la preferencia de ordenación. Las versiones anteriores de los archivos ZIP siguen siendo compatibles.
 
 No se modifica el conversor WebP/GIF que preserva la duración y velocidad de los stickers animados.
+
+## Stickit 0.5.1 — Velocidad de GIF y WebP estabilizada
+
+El conversor WebP ya no produce fotogramas con retardos de 20 ms que determinados reproductores de GIF pueden alargar artificialmente. Remuestrea la animación en intervalos de aproximadamente 40 ms (equivalentes a 25 FPS) o más, utilizando los tiempos acumulados originales para decidir qué fotograma mostrar. Mantiene la duración completa del sticker, con precisión de centésimas de segundo, y un límite máximo de 350 fotogramas de salida. Los fotogramas de origen de baja frecuencia se replican correctamente, evitando errores de importación.
+
+El editor de recorte no vuelve a codificar si se pulsa Guardar sin cambios. Al aplicar una edición real, los GIF antiguos con retardos demasiado cortos también se normalizan a tiempos de reproducción seguros conservando la duración. Para corregir un sticker WebP importado con versiones anteriores, abre **Editar sticker → Corregir animación WebP original** (requiere que Stickit conserve el original). Las pruebas automatizadas comprueban las duraciones, los retardos codificados y la repetición de fotogramas.
