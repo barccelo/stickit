@@ -102,18 +102,31 @@ object GifConverter {
             val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 ?.toLongOrNull() ?: 1500L
             val usable = min(duration, 2400L).coerceAtLeast(100L)
-            val interval = 160L
-            val frameCount = ((usable + interval - 1) / interval).toInt().coerceIn(1, 15)
+            val knownFrames = retriever.extractMetadata(
+                MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT
+            )?.toLongOrNull()
+            // Use the source frame rate when Android reports a reliable frame
+            // count; otherwise sample at 25 FPS. Unlike the previous 6.25 FPS
+            // export, this preserves motion and total animation duration.
+            val sourceFps = knownFrames?.takeIf { it > 0L && duration > 0L }
+                ?.let { it * 1000.0 / duration }
+            val timeline = GifTimeline.samples(usable, sourceFps)
             FileOutputStream(destination).use { output ->
                 val gif = GifWriter(output)
                 var wrote = 0
-                for (index in 0 until frameCount) {
-                    val bitmap = retriever.getFrameAtTime(index * interval * 1000,
-                        MediaMetadataRetriever.OPTION_CLOSEST)
-                    if (bitmap != null) {
-                        try {
-                            gif.frame(squarePixels(bitmap), 16)
-                        } finally { bitmap.recycle() }
+                var lastPixels: IntArray? = null
+                for (sample in timeline) {
+                    val bitmap = retriever.getFrameAtTime(
+                        sample.presentationTimeUs, MediaMetadataRetriever.OPTION_CLOSEST
+                    )
+                    val pixels = if (bitmap == null) lastPixels else try {
+                        squarePixels(bitmap)
+                    } finally {
+                        bitmap.recycle()
+                    }
+                    if (pixels != null) {
+                        gif.frame(pixels, sample.delayCentiseconds)
+                        lastPixels = pixels
                         wrote++
                     }
                 }
