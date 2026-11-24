@@ -24,7 +24,7 @@ import java.io.FileOutputStream
  * clips and is only a diagnostic reference to the formerly working export.
  */
 enum class WebPPlaybackProfile {
-    WHATSAPP_COMPAT, HIGH_FPS, SHORT_REFERENCE, FULL_REFERENCE_CADENCE
+    WHATSAPP_COMPAT, HIGH_FPS, SHORT_REFERENCE
 }
 
 internal object WebPStickerImport {
@@ -33,7 +33,7 @@ internal object WebPStickerImport {
         uri: Uri,
         destination: File,
         square: (Bitmap) -> IntArray,
-        profile: WebPPlaybackProfile = WebPPlaybackProfile.FULL_REFERENCE_CADENCE
+        profile: WebPPlaybackProfile = WebPPlaybackProfile.HIGH_FPS
     ) {
         val decoder = WebPDecoder(context)
         try {
@@ -61,8 +61,6 @@ internal object WebPStickerImport {
             }
 
             val frames = when (profile) {
-                WebPPlaybackProfile.FULL_REFERENCE_CADENCE ->
-                    WebPFrameTiming.fullLengthAtReferenceCadence(frameEndTimes)
                 WebPPlaybackProfile.WHATSAPP_COMPAT ->
                     WebPFrameTiming.plan(frameEndTimes,
                         WebPFrameTiming.COMPAT_FRAME_CAP)

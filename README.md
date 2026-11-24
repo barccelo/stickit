@@ -110,3 +110,9 @@ Las pruebas verifican duración completa, máximo de fotogramas, los tres perfil
 La opción **Completo · ritmo de 2,4 s (nuevo)** aplica 40 milisegundos por fotograma hasta el final de la animación, como en la referencia corta comprobada en WhatsApp, pero sin recortarla. Los WebP con frecuencia superior a 25 FPS se remuestrean para evitar ralentizarlos. Se conserva el original, la reconstrucción es atómica y el nuevo perfil es el predeterminado de importación. Se mantienen los tres modos anteriores para comparar.
 
 **Importante:** el resultado pegado está sujeto al procesamiento de GIF de WhatsApp y debe validarse en el teléfono. Si WhatsApp ralentiza incluso esta conversión completa, la siguiente solución es el soporte oficial de stickers WebP animados mediante paquetes, no recortar nuevamente la animación.
+
+## Stickit 0.5.4 — Eliminar aceleración y ofrecer WebP animado nativo
+
+Se revierte el modo experimental que imponía 40 ms a todos los fotogramas y provocaba aceleración. Nuevas importaciones y reconstrucciones de WebP usan la duración real y el modo de mayor fluidez (hasta 350 cuadros); el modo corto de 2,4 s permanece solo como referencia. Los GIF pegados siguen sujetos al reproductor de WhatsApp, que puede alterar animaciones completas.
+
+**Nueva vía nativa:** en un sticker importado desde WebP animado, **Editar sticker → Añadir animados a WhatsApp** prepara una copia de los originales compatibles del mismo paquete (3–30, 512×512, hasta 500 KB y 10 s cada uno) sin modificar el ritmo. Utiliza el ContentProvider y la acción oficiales de WhatsApp para que el usuario confirme la incorporación del paquete en WhatsApp y envíe los stickers desde su selector nativo. No intenta usar el portapapeles GIF para estos envíos. Solo exporta WebP originales válidos; si hay menos de tres, explica por qué no puede formar el paquete. Los cambios hechos exclusivamente en el GIF no modifican el WebP original.

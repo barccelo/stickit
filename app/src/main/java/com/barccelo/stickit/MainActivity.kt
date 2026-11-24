@@ -346,15 +346,12 @@ class MainActivity : ComponentActivity() {
                             val profile = when (selected) {
                                 1 -> WebPPlaybackProfile.HIGH_FPS
                                 2 -> WebPPlaybackProfile.SHORT_REFERENCE
-                                3 -> WebPPlaybackProfile.FULL_REFERENCE_CADENCE
                                 else -> WebPPlaybackProfile.WHATSAPP_COMPAT
                             }
                             runTask {
                                 GifConverter.reprocessStoredWebp(this, gifFile,
                                     profile)
                                 when (profile) {
-                                    WebPPlaybackProfile.FULL_REFERENCE_CADENCE ->
-                                        "GIF completo con ritmo del modo corto. Pruébalo en WhatsApp."
                                     WebPPlaybackProfile.WHATSAPP_COMPAT ->
                                         "GIF completo en modo WhatsApp: máximo 60 cuadros."
                                     WebPPlaybackProfile.HIGH_FPS ->
@@ -362,6 +359,24 @@ class MainActivity : ComponentActivity() {
                                     WebPPlaybackProfile.SHORT_REFERENCE ->
                                         "GIF de referencia: solo los primeros 2,4 segundos."
                                 }
+                            }
+                        }) else null,
+                        onAddNativeWhatsApp = if (isWebpSource) ({
+                            editing = null
+                            var prepared: PreparedNativePack? = null
+                            runTask(onSuccess = {
+                                prepared?.let { pack ->
+                                    try {
+                                        startActivity(WhatsAppNativePacks.addIntent(pack))
+                                    } catch (_: android.content.ActivityNotFoundException) {
+                                        notify("No se encontró WhatsApp para añadir el paquete.")
+                                    } catch (error: Exception) {
+                                        notify("WhatsApp no pudo abrir el paquete: ${error.message}")
+                                    }
+                                }
+                            }) {
+                                prepared = WhatsAppNativePacks.prepare(this, store, current)
+                                "Paquete animado preparado. Confirma su incorporación en WhatsApp."
                             }
                         }) else null,
                         onDismiss = { editing = null },
@@ -376,7 +391,7 @@ class MainActivity : ComponentActivity() {
                             runTask {
                                 if (isWebpSource) {
                                     GifConverter.reprocessStoredWebp(this, gifFile)
-                                    "WebP reconstruido con el ritmo del modo corto, sin cortar el final."
+                                    "GIF reconstruido con la duración original. Para animación nativa, añádelo a WhatsApp."
                                 } else {
                                     GifConverter.reprocessStoredGif(gifFile)
                                     "GIF reprocesado. Puedes copiarlo nuevamente."

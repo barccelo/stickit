@@ -835,7 +835,8 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
     onSave: (String, String, String, String) -> Unit,
     onArtwork: () -> Unit, onReprocess: () -> Unit, onUndo: () -> Unit,
     onDelete: () -> Unit, onWebpProfile: ((Int) -> Unit)? = null,
-    playbackInfo: String? = null
+    playbackInfo: String? = null,
+    onAddNativeWhatsApp: (() -> Unit)? = null
 ) {
     var name by remember(sticker.id) { mutableStateOf(sticker.name) }
     var tags by remember(sticker.id) { mutableStateOf(sticker.tags) }
@@ -892,12 +893,6 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
                             DropdownMenu(expanded = playbackMenu,
                                 onDismissRequest = { playbackMenu = false }) {
                                 DropdownMenuItem(
-                                    text = { Text("Completo · ritmo de 2,4 s (nuevo)") },
-                                    onClick = {
-                                        playbackMenu = false
-                                        onWebpProfile(3)
-                                    })
-                                DropdownMenuItem(
                                     text = { Text("Completo · WhatsApp (60 cuadros)") },
                                     onClick = {
                                         playbackMenu = false
@@ -917,10 +912,19 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
                                     })
                             }
                         }
-                        Text("El nuevo modo usa la misma cadencia de 40 ms que la referencia corta, pero hasta el final de la animación. Comprueba el resultado pegándolo en WhatsApp.",
+                        Text("Los GIF completos mantienen la duración original, pero WhatsApp puede alterarlos al pegarlos. Para conservar la animación WebP nativa, añade el paquete a WhatsApp.",
                             color = Secondary, fontSize = 11.sp, lineHeight = 16.sp)
                     } else if (canReprocess) {
                         TextButton(onClick = onReprocess) { Text(reprocessLabel) }
+                    }
+                    if (onAddNativeWhatsApp != null) {
+                        OutlinedButton(onClick = onAddNativeWhatsApp,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(13.dp)) {
+                            Text("Añadir animados a WhatsApp")
+                        }
+                        Text("Utiliza los WebP originales de este paquete: sin convertir a GIF. WhatsApp requiere de 3 a 30 stickers animados compatibles y pide confirmar la incorporación.",
+                            color = Secondary, fontSize = 11.sp, lineHeight = 16.sp)
                     }
                     TextButton(onClick = { deletion = true }) {
                         Icon(Icons.Outlined.DeleteOutline, null, Modifier.size(18.dp))

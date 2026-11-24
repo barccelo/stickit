@@ -114,59 +114,15 @@ class WebPFrameTimingTest {
         }
     }
 
-    @Test fun fullReferenceCadenceExtendsSlowSourceInsteadOfClipping() {
-        val source = (1..150).map { it * 80 }
-        val result = WebPFrameTiming.fullLengthAtReferenceCadence(source)
-        assertEquals(150, result.size)
-        assertEquals(600, result.sumOf { it.delayCentiseconds })
-        assertEquals(149, result.last().sourceIndex)
-        assertTrue(result.all { it.delayCentiseconds == 4 })
-    }
 
-    @Test fun fullReferenceCadenceKeepsEntire25FpsAnimation() {
-        val result = WebPFrameTiming.fullLengthAtReferenceCadence(
-            (1..160).map { it * 40 })
-        assertEquals(160, result.size)
-        assertEquals(640, result.sumOf { it.delayCentiseconds })
-        assertEquals(159, result.last().sourceIndex)
-    }
 
-    @Test fun fullReferenceCadenceDoesNotSlowFastInput() {
-        val result = WebPFrameTiming.fullLengthAtReferenceCadence(
-            (1..300).map { it * 10 })
-        assertEquals(300, result.sumOf { it.delayCentiseconds })
-        assertEquals(0, result.first().sourceIndex)
-        assertEquals(299, result.last().sourceIndex)
-        assertTrue(result.size <= 75)
-    }
 
-    @Test fun fullReferenceCadenceWrittenGifKeepsFrameDelays() {
-        val frames = WebPFrameTiming.fullLengthAtReferenceCadence(
-            (1..110).map { it * 70 })
-        val output = ByteArrayOutputStream()
-        val writer = GifWriter(output, 8)
-        val pixels = IntArray(64) { 0xFF119977.toInt() }
-        frames.forEach { writer.frame(pixels, it.delayCentiseconds) }
-        writer.finish()
-        assertEquals(frames.map { it.delayCentiseconds },
-            GifFrameTiming.delaysCentiseconds(output.toByteArray()))
-        assertEquals(109, frames.last().sourceIndex)
-    }
 
-    @Test fun veryShortFastAnimationDoesNotFailOnSingleSafeFrame() {
-        val output = WebPFrameTiming.fullLengthAtReferenceCadence(
-            listOf(5, 10, 20))
-        assertEquals(1, output.size)
-        assertEquals(2, output.single().sourceIndex)
-        assertEquals(4, output.single().delayCentiseconds)
-    }
 
-    @Test fun referenceCadenceLeavesAlreadyShortWebpsAtOriginalSpeed() {
-        val output = WebPFrameTiming.fullLengthAtReferenceCadence(
-            listOf(200, 400, 600, 800))
-        assertEquals(listOf(20, 20, 20, 20),
-            output.map { it.delayCentiseconds })
-        assertEquals(80, output.sumOf { it.delayCentiseconds })
-        assertEquals(3, output.last().sourceIndex)
-    }
+
+
+
+
+
+
 }
