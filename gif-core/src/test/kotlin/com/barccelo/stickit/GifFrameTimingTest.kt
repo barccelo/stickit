@@ -57,7 +57,7 @@ class GifFrameTimingTest {
         assertTrue(samples.all { it.delayCentiseconds == 4 })
         assertEquals(0, indices.first())
         assertEquals(96, indices.last())
-        assertTrue(indices.zipWithNext().all { (a, b) -> b > a })
+        assertTrue(indices.toList().zipWithNext().all { (a, b) -> b > a })
     }
 
     @Test fun longerGifFollowsTheSameClipLimitAsVideo() {
@@ -75,7 +75,7 @@ class GifFrameTimingTest {
         val indices = GifFrameTiming.sourceIndicesFor(raw, frames)
         assertEquals(GifFrameTiming.effectiveDurationMs(raw) / 10,
             frames.sumOf { it.delayCentiseconds })
-        assertTrue(indices.zipWithNext().all { (a, b) -> a <= b })
+        assertTrue(indices.toList().zipWithNext().all { (a, b) -> a <= b })
         assertTrue(indices.all { it in raw.indices })
     }
 
