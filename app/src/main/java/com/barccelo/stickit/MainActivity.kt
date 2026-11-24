@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
     private var packNames by mutableStateOf<List<String>>(emptyList())
     private var themeMode by mutableIntStateOf(AppearanceSettings.SYSTEM)
     private var pendingPackLink by mutableStateOf<String?>(null)
+    private var pasteWhenFocused = false
     private var overlayActive by mutableStateOf(false)
     private var busy by mutableStateOf(false)
     private var previewVersion by mutableIntStateOf(0)
@@ -342,8 +343,24 @@ class MainActivity : ComponentActivity() {
             ACTION_QUICK_IMPORT -> window.decorView.post {
                 mediaPicker.launch(arrayOf("image/*", "video/*"))
             }
-            ACTION_QUICK_PASTE -> window.decorView.post { fromClipboard() }
+            ACTION_QUICK_PASTE -> requestClipboardPaste()
         }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) window.decorView.post { consumeClipboardPaste() }
+    }
+
+    private fun requestClipboardPaste() {
+        pasteWhenFocused = true
+        if (hasWindowFocus()) window.decorView.post { consumeClipboardPaste() }
+    }
+
+    private fun consumeClipboardPaste() {
+        if (!pasteWhenFocused || !hasWindowFocus()) return
+        pasteWhenFocused = false
+        fromClipboard()
     }
 
     override fun onResume() {
@@ -458,7 +475,8 @@ class MainActivity : ComponentActivity() {
             }
             val uri = (0 until clip.itemCount).asSequence().mapNotNull { index ->
                 val item = clip.getItemAt(index)
-                val image = item.uri ?: item.intent?.data
+                val image = item.uri ?: item.intent?.data ?: item.text?.toString()
+                    ?.takeIf { it.startsWith("content://") }?.let(Uri::parse)
                 image?.takeIf { candidate ->
                     candidate.scheme in listOf("content", "file") && try {
                         contentResolver.openInputStream(candidate).use { it?.read() != null }
