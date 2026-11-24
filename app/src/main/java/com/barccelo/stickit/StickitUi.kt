@@ -976,6 +976,12 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
                                         onWebpProfile(1)
                                     })
                                 DropdownMenuItem(
+                                    text = { Text("Completo · ritmo de referencia (nuevo)") },
+                                    onClick = {
+                                        playbackMenu = false
+                                        onWebpProfile(3)
+                                    })
+                                DropdownMenuItem(
                                     text = { Text("Referencia corta · 2,4 s") },
                                     onClick = {
                                         playbackMenu = false
@@ -983,7 +989,7 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
                                     })
                             }
                         }
-                        Text("Los GIF completos mantienen la duración original, pero WhatsApp puede alterarlos al pegarlos. Para conservar la animación WebP nativa, añade el paquete a WhatsApp.",
+                        Text("El nuevo modo repite el muestreo de la prueba de 2,4 s por tramos hasta el final, sin acelerar ni recortar. WhatsApp puede reproducir un GIF largo de forma diferente; compara los resultados.",
                             color = Secondary, fontSize = 11.sp, lineHeight = 16.sp)
                     } else if (canReprocess) {
                         TextButton(onClick = onReprocess) { Text(reprocessLabel) }

@@ -125,4 +125,88 @@ class WebPFrameTimingTest {
 
 
 
+
+    @Test fun fullReferenceExtendsWorkingClipWithoutCuttingOrSpeeding() {
+        val timestamps = (1..150).map { it * 40 } // 6 seconds, 25 FPS
+        val oldShort = WebPFrameTiming.plan(timestamps,
+            WebPFrameTiming.COMPAT_FRAME_CAP, WebPFrameTiming.SHORT_REFERENCE_MS)
+        val result = WebPFrameTiming.fullAtReferenceCadence(timestamps)
+        assertEquals(150, result.size)
+        assertEquals(600, result.sumOf { it.delayCentiseconds })
+        assertEquals(oldShort, result.take(oldShort.size))
+        assertEquals(149, result.last().sourceIndex)
+        assertTrue(result.all { it.delayCentiseconds == 4 })
+    }
+
+    @Test fun fullReferenceUsesDynamicFramesAndKeepsThirtySeconds() {
+        val timestamps = (1..750).map { it * 40 }
+        val result = WebPFrameTiming.fullAtReferenceCadence(timestamps)
+        assertEquals(750, result.size)
+        assertEquals(3_000, result.sumOf { it.delayCentiseconds })
+        assertEquals(749, result.last().sourceIndex)
+        assertTrue(result.all { it.delayCentiseconds == 4 })
+    }
+
+    @Test fun fullReferenceUsesOriginalTimeForSlowSourceFrames() {
+        // Old experimental mode imposed 40 ms per SOURCE frame, accelerating it.
+        val timestamps = (1..80).map { it * 100 } // 8 seconds at 10 FPS
+        val result = WebPFrameTiming.fullAtReferenceCadence(timestamps)
+        assertEquals(800, result.sumOf { it.delayCentiseconds })
+        assertEquals(0, result.first().sourceIndex)
+        assertEquals(79, result.last().sourceIndex)
+        assertTrue(result.size <= 80)
+        assertTrue(result.all { it.delayCentiseconds >= 4 })
+    }
+
+    @Test fun fullReferenceSamplesFastFramesButKeepsWholeDuration() {
+        val timestamps = (1..1_000).map { it * 10 } // 10 seconds at 100 FPS
+        val output = WebPFrameTiming.fullAtReferenceCadence(timestamps)
+        val short = WebPFrameTiming.plan(timestamps,
+            WebPFrameTiming.COMPAT_FRAME_CAP, WebPFrameTiming.SHORT_REFERENCE_MS)
+        assertEquals(short, output.take(short.size))
+        assertEquals(1_000, output.sumOf { it.delayCentiseconds })
+        assertTrue(output.size > 200)
+        assertTrue(output.size <= 250)
+        assertTrue(output.zipWithNext().all { (a, b) ->
+            a.sourceIndex < b.sourceIndex
+        })
+    }
+
+    @Test fun fullReferenceDoesNotStretchFrameAcrossWindowBoundary() {
+        val source = listOf(4_000, 4_500, 7_200) // frames span 2.4-s windows
+        val output = WebPFrameTiming.fullAtReferenceCadence(source)
+        assertEquals(listOf(0, 1, 2), output.map { it.sourceIndex })
+        assertEquals(720, output.sumOf { it.delayCentiseconds })
+        assertEquals(listOf(400, 50, 270), output.map { it.delayCentiseconds })
+    }
+
+    @Test fun fullReferenceKeepsNonMultipleOfWindowDuration() {
+        val source = (1..61).map { it * 40 } + listOf(2_470)
+        val output = WebPFrameTiming.fullAtReferenceCadence(source)
+        assertEquals(247, output.sumOf { it.delayCentiseconds })
+        assertTrue(output.zipWithNext().all { (a, b) -> a.sourceIndex < b.sourceIndex })
+        assertEquals(source.lastIndex, output.last().sourceIndex)
+    }
+
+    @Test fun fullReferenceAppendsTinyTailWithoutInventingFortyMs() {
+        val source = (1..60).map { it * 40 } + listOf(2_411)
+        val output = WebPFrameTiming.fullAtReferenceCadence(source)
+        assertEquals(241, output.sumOf { it.delayCentiseconds })
+        assertEquals(60, output.size)
+        assertEquals(5, output.last().delayCentiseconds)
+    }
+
+    @Test fun fullReferenceGifEncodesPlannedDelays() {
+        val source = (1..180).map { it * 40 }
+        val planned = WebPFrameTiming.fullAtReferenceCadence(source)
+        val buffer = ByteArrayOutputStream()
+        val writer = GifWriter(buffer, 8)
+        val pixels = IntArray(64) { 0xFF112233.toInt() }
+        planned.forEach { writer.frame(pixels, it.delayCentiseconds) }
+        writer.finish()
+        assertEquals(planned.map { it.delayCentiseconds },
+            GifFrameTiming.delaysCentiseconds(buffer.toByteArray()))
+    }
+
+
 }

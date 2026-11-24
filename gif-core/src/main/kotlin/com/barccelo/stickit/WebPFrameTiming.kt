@@ -22,6 +22,77 @@ object WebPFrameTiming {
 
     data class OutputFrame(val sourceIndex: Int, val delayCentiseconds: Int)
 
+
+    /**
+     * Full-duration equivalent of the proven 2.4-second reference mode.
+     *
+     * Each 2,400-ms window uses precisely the same 60-frame sampling
+     * algorithm as SHORT_REFERENCE, including its original GIF delays.
+     * Rebase subsequent windows onto the source timestamps instead of
+     * restarting or truncating the animation. Frames spanning a window
+     * boundary are merged; this does NOT force 40 ms onto source frames.
+     *
+     * Up to 750 distinct output frames may be needed for a 30-s source.
+     * That is intentionally different from the 60-frame full-length mode.
+     */
+    fun fullAtReferenceCadence(frameEndTimesMs: List<Int>): List<OutputFrame> {
+        require(frameEndTimesMs.isNotEmpty()) { "El WebP no contiene fotogramas" }
+        require(frameEndTimesMs.size <= MAX_SOURCE_FRAMES) {
+            "La animación contiene demasiados fotogramas"
+        }
+        var previous = 0
+        frameEndTimesMs.forEach { end ->
+            require(end >= previous) { "Los tiempos de los fotogramas están desordenados" }
+            previous = end
+        }
+        require(previous > 0) { "La animación no tiene duración válida" }
+        require(previous <= MAX_DURATION_MS) {
+            "La animación supera 30 segundos. No se recortará sin autorización."
+        }
+
+        val totalCs = ((previous.toLong() + 5L) / 10L).toInt()
+            .coerceAtLeast(MIN_SAFE_DELAY_CS)
+        val output = ArrayList<OutputFrame>()
+        var segmentStartMs = 0
+        while (segmentStartMs < previous) {
+            val remainingMs = previous - segmentStartMs
+            // A tiny leftover cannot form an independent GIF frame with a
+            // 40-ms safe delay. Add its rounded duration to the previous one.
+            if (remainingMs < 35 && output.isNotEmpty()) {
+                val tailCs = ((remainingMs + 5) / 10)
+                if (tailCs > 0) {
+                    val last = output.last()
+                    output[output.lastIndex] = last.copy(
+                        delayCentiseconds = last.delayCentiseconds + tailCs)
+                }
+                break
+            }
+            // Include the source frame straddling the current window's start.
+            // For the first window this is exactly the SHORT_REFERENCE input.
+            val firstSourceIndex = frameEndTimesMs.indexOfFirst { it > segmentStartMs }
+            check(firstSourceIndex >= 0)
+            val relativeEnds = frameEndTimesMs.subList(firstSourceIndex,
+                frameEndTimesMs.size).map { it - segmentStartMs }
+            val segment = plan(relativeEnds, COMPAT_FRAME_CAP, SHORT_REFERENCE_MS)
+            for (frame in segment) {
+                val absoluteIndex = firstSourceIndex + frame.sourceIndex
+                val last = output.lastOrNull()
+                if (last != null && last.sourceIndex == absoluteIndex) {
+                    output[output.lastIndex] = last.copy(
+                        delayCentiseconds = last.delayCentiseconds + frame.delayCentiseconds)
+                } else {
+                    output.add(OutputFrame(absoluteIndex, frame.delayCentiseconds))
+                }
+            }
+            segmentStartMs += SHORT_REFERENCE_MS
+        }
+        check(output.isNotEmpty())
+        check(output.zipWithNext().all { (a, b) -> a.sourceIndex < b.sourceIndex })
+        check(output.all { it.delayCentiseconds in MIN_SAFE_DELAY_CS..65535 })
+        check(output.sumOf { it.delayCentiseconds } == totalCs)
+        return output
+    }
+
     fun plan(
         frameEndTimesMs: List<Int>,
         maxOutputFrames: Int = COMPAT_FRAME_CAP,

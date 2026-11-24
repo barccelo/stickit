@@ -397,6 +397,7 @@ class MainActivity : ComponentActivity() {
                             val profile = when (selected) {
                                 1 -> WebPPlaybackProfile.HIGH_FPS
                                 2 -> WebPPlaybackProfile.SHORT_REFERENCE
+                                3 -> WebPPlaybackProfile.FULL_REFERENCE_RHYTHM
                                 else -> WebPPlaybackProfile.WHATSAPP_COMPAT
                             }
                             runTask {
@@ -409,6 +410,8 @@ class MainActivity : ComponentActivity() {
                                         "GIF completo con máxima fluidez."
                                     WebPPlaybackProfile.SHORT_REFERENCE ->
                                         "GIF de referencia: solo los primeros 2,4 segundos."
+                                    WebPPlaybackProfile.FULL_REFERENCE_RHYTHM ->
+                                        "GIF completo con el mismo muestreo de la referencia de 2,4 s; conserva la duración."
                                 }
                             }
                         }) else null,
