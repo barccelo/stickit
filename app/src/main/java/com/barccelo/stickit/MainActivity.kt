@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) runTask {
             val count = StickitBackup.export(this, store, uri)
-            "Respaldo guardado: $"+"{count} stickers."
+            "Respaldo guardado: ${count} stickers."
         }
     }
     private val backupReader = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->

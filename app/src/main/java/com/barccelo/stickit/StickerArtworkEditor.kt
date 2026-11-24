@@ -120,7 +120,7 @@ object StickerArtworkEditor {
                 val lines = mutableListOf<String>()
                 var current = ""
                 words.forEach { word ->
-                    val test = if (current.isEmpty()) word else "$"+"current $word"
+                    val test = if (current.isEmpty()) word else "$current $word"
                     if (paint.measureText(test) > 222 && current.isNotBlank()) {
                         lines.add(current); current = word
                     } else current = test

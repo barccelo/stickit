@@ -69,7 +69,7 @@ object StickitBackup {
             media.add("media/$id.gif" to source)
             val stem = File(sticker.fileName).nameWithoutExtension
             for (extension in listOf("source.gif", "source.webp", "unedited.gif")) {
-                val original = File(folder, "$"+"{stem}.$"+"{extension}")
+                val original = File(folder, "${stem}.${extension}")
                 if (original.isFile) {
                     val key = extension.replace(".", "_")
                     val archiveName = "originals/$id.$extension"
@@ -186,7 +186,7 @@ object StickitBackup {
                     )) {
                         if (row.has(key)) {
                             val original = extracted[row.getString(key)] ?: error("Falta archivo de origen")
-                            original.copyTo(File(folder, "$"+"{stem}.$"+"{extension}"))
+                            original.copyTo(File(folder, "${stem}.${extension}"))
                         }
                     }
                 } catch (e: Exception) {
@@ -282,7 +282,7 @@ object StickitPackImport {
     }
 
     private fun importOne(context: Context, store: StickerStore, file: File, name: String, pack: String) {
-        val uri = FileProvider.getUriForFile(context, "$"+"{context.packageName}.fileprovider", file)
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         val gif = GifConverter.import(context, uri)
         try { store.add(gif, name.take(150), "", pack.take(150)) }
         catch (e: Exception) { gif.delete(); throw e }
