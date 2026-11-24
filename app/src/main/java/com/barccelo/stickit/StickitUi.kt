@@ -131,6 +131,11 @@ private fun StickerTile(
 @Composable
 fun StickitHome(
     stickers: List<Sticker>,
+    packs: List<String>,
+    onCreatePack: (String) -> Unit,
+    onRenamePack: (String, String) -> Unit,
+    onMovePack: (String, Int) -> Unit,
+    onDeletePack: (String, Boolean) -> Unit,
     fileOf: (Sticker) -> File,
     previewVersion: Int,
     busy: Boolean,
@@ -165,7 +170,9 @@ fun StickitHome(
     val selected = remember { mutableStateListOf<Long>() }
     var bulkDialog by remember { mutableStateOf(false) }
     var deleteDialog by remember { mutableStateOf(false) }
-    val packs = remember(stickers) { stickers.map { it.pack }.distinct().sorted() }
+    var packEditor by remember { mutableStateOf<String?>(null) }
+    var newPack by remember { mutableStateOf(false) }
+    var deletePack by remember { mutableStateOf<String?>(null) }
     val filters = listOf("Todos", "Recientes", "Favoritos") +
         packs.map { "Paquete: $it" }
     val shown = remember(stickers, search, activeFilter) {
@@ -368,32 +375,85 @@ fun StickitHome(
                     }
                 }
                 1 -> {
-                    if (packs.isEmpty()) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("Los paquetes aparecerán cuando importes stickers", color = Secondary)
+                    Column(Modifier.fillMaxSize()) {
+                        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 18.dp,
+                            top = 8.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Paquetes", color = Ink, fontWeight = FontWeight.SemiBold,
+                                    style = MaterialTheme.typography.titleMedium)
+                                Text("Ordena tus colecciones como prefieras",
+                                    color = Secondary, fontSize = 12.sp)
+                            }
+                            FilledTonalIconButton(onClick = { newPack = true }) {
+                                Icon(Icons.Outlined.Add, contentDescription = "Crear paquete")
+                            }
                         }
-                    } else {
-                        LazyColumn(contentPadding = PaddingValues(18.dp),
-                            verticalArrangement = Arrangement.spacedBy(11.dp)) {
+                        LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp,
+                            bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                             lazyItems(packs) { pack ->
-                                val list = stickers.filter { it.pack == pack }
-                                Surface(onClick = {
-                                    activeFilter = "Paquete: $pack"; tab = 0
-                                }, color = Color.White, shape = RoundedCornerShape(20.dp),
+                                val list = stickers.filter { it.pack.equals(pack, true) }
+                                Surface(color = Color.White, shape = RoundedCornerShape(19.dp),
                                     border = BorderStroke(1.dp, Stroke)) {
-                                    Row(Modifier.fillMaxWidth().padding(14.dp),
+                                    Row(Modifier.fillMaxWidth().padding(9.dp),
                                         verticalAlignment = Alignment.CenterVertically) {
-                                        Box(Modifier.size(62.dp).clip(RoundedCornerShape(14.dp))
-                                            .background(Light), contentAlignment = Alignment.Center) {
+                                        Box(Modifier.size(55.dp).clip(RoundedCornerShape(14.dp))
+                                            .background(Light).clickable {
+                                                activeFilter = "Paquete: $pack"; tab = 0
+                                            }, contentAlignment = Alignment.Center) {
                                             if (list.isNotEmpty()) StickerPreview(fileOf(list.first()),
-                                                Modifier.fillMaxSize().padding(5.dp))
+                                                Modifier.fillMaxSize().padding(4.dp))
+                                            else Icon(Icons.Outlined.Folder, null,
+                                                tint = Secondary)
                                         }
-                                        Spacer(Modifier.width(13.dp))
-                                        Column(Modifier.weight(1f)) {
-                                            Text(pack, fontWeight = FontWeight.SemiBold, color = Ink)
-                                            Text("${list.size} stickers", color = Secondary, fontSize = 12.sp)
+                                        Spacer(Modifier.width(9.dp))
+                                        Column(Modifier.weight(1f).clickable {
+                                            activeFilter = "Paquete: $pack"; tab = 0
+                                        }) {
+                                            Text(pack, fontWeight = FontWeight.SemiBold,
+                                                color = Ink, maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis)
+                                            Text("${list.size} stickers", color = Secondary,
+                                                fontSize = 12.sp)
                                         }
-                                        Icon(Icons.Outlined.ChevronRight, null, tint = Secondary)
+                                        IconButton(onClick = { onMovePack(pack, -1) },
+                                            enabled = packs.indexOf(pack) > 0,
+                                            modifier = Modifier.size(33.dp)) {
+                                            Icon(Icons.Outlined.KeyboardArrowUp,
+                                                contentDescription = "Subir paquete", tint = Secondary)
+                                        }
+                                        IconButton(onClick = { onMovePack(pack, 1) },
+                                            enabled = packs.indexOf(pack) < packs.lastIndex,
+                                            modifier = Modifier.size(33.dp)) {
+                                            Icon(Icons.Outlined.KeyboardArrowDown,
+                                                contentDescription = "Bajar paquete", tint = Secondary)
+                                        }
+                                        var menuExpanded by remember(pack) { mutableStateOf(false) }
+                                        Box {
+                                            IconButton(onClick = { menuExpanded = true },
+                                                modifier = Modifier.size(33.dp)) {
+                                                Icon(Icons.Outlined.MoreVert,
+                                                    contentDescription = "Opciones de paquete",
+                                                    tint = Secondary)
+                                            }
+                                            DropdownMenu(expanded = menuExpanded,
+                                                onDismissRequest = { menuExpanded = false }) {
+                                                DropdownMenuItem(
+                                                    text = { Text("Cambiar nombre") },
+                                                    enabled = !pack.equals("General", true),
+                                                    onClick = {
+                                                        menuExpanded = false
+                                                        packEditor = pack
+                                                    })
+                                                DropdownMenuItem(
+                                                    text = { Text("Eliminar paquete") },
+                                                    enabled = !pack.equals("General", true),
+                                                    onClick = {
+                                                        menuExpanded = false
+                                                        deletePack = pack
+                                                    })
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -549,6 +609,59 @@ fun StickitHome(
                 }
             }
         }
+    }
+
+    if (newPack || packEditor != null) {
+        val original = packEditor
+        var value by remember(original) { mutableStateOf(original.orEmpty()) }
+        AlertDialog(onDismissRequest = { newPack = false; packEditor = null },
+            title = { Text(if (original == null) "Crear paquete" else "Renombrar paquete") },
+            text = {
+                OutlinedTextField(value = value, onValueChange = { value = it.take(120) },
+                    label = { Text("Nombre del paquete") }, singleLine = true,
+                    shape = RoundedCornerShape(14.dp))
+            },
+            confirmButton = {
+                Button(enabled = value.isNotBlank(), onClick = {
+                    if (original == null) onCreatePack(value)
+                    else onRenamePack(original, value)
+                    newPack = false
+                    packEditor = null
+                }) { Text("Guardar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { newPack = false; packEditor = null }) {
+                    Text("Cancelar")
+                }
+            })
+    }
+    val pendingDelete = deletePack
+    if (pendingDelete != null) {
+        var deleteContents by remember(pendingDelete) { mutableStateOf(false) }
+        AlertDialog(onDismissRequest = { deletePack = null },
+            title = { Text("Eliminar paquete") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("¿Qué hacemos con los stickers de «$pendingDelete»?")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = deleteContents,
+                            onCheckedChange = { deleteContents = it })
+                        Text("Eliminar también los stickers", fontSize = 13.sp)
+                    }
+                    Text(if (deleteContents) "Esta acción eliminará los archivos de Stickit."
+                        else "Se conservarán los stickers en el paquete General.",
+                        color = Secondary, fontSize = 12.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeletePack(pendingDelete, deleteContents)
+                    deletePack = null
+                }) { Text("Eliminar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletePack = null }) { Text("Cancelar") }
+            })
     }
 
     if (bulkDialog) {
