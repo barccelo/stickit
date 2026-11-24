@@ -61,6 +61,7 @@ object StickitBackup {
             })
             put("suggestions", ShortcutSettings.suggestionsEnabled(context))
             put("themeMode", AppearanceSettings.mode(context))
+            put("stickerOrder", StickerOrdering.current(context))
             put("panelHeightDp", ShortcutSettings.panelHeightDp(context))
             put("suggestX", ShortcutSettings.suggestX(context))
             put("suggestY", ShortcutSettings.suggestY(context))
@@ -238,6 +239,8 @@ object StickitBackup {
                 }
                 if (ui.has("themeMode")) AppearanceSettings.save(
                     context, ui.optInt("themeMode"))
+                if (ui.has("stickerOrder")) StickerOrdering.save(
+                    context, ui.optInt("stickerOrder"))
                 if (ui.has("suggestions")) ShortcutSettings.setSuggestionsEnabled(
                     context, ui.optBoolean("suggestions"))
                 if (ui.has("panelHeightDp")) ShortcutSettings.setPanelHeightDp(
