@@ -486,6 +486,7 @@ class MainActivity : ComponentActivity() {
                     previewVersion++
                     refresh()
                     refreshShortcutSettings()
+                    themeMode = AppearanceSettings.mode(this)
                     notify(message)
                 }
             } catch (e: Exception) {

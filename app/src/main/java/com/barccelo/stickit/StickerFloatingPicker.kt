@@ -210,7 +210,7 @@ class StickerFloatingPicker(
             muted).apply { gravity = Gravity.CENTER },
             LinearLayout.LayoutParams(-1, dp(26)))
 
-        val packs = store.all().map(Sticker::pack).distinct().sorted()
+        val packs = store.packNames()
         var activeFilter = "Todos"
         val choices = listOf("Todos", "Favoritos") + packs.map { "Paquete: $it" }
         var visibleItems = emptyList<Sticker>()
