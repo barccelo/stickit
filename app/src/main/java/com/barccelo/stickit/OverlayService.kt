@@ -30,6 +30,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import java.lang.ref.WeakReference
 import java.io.File
 import kotlin.math.abs
 
@@ -47,12 +48,17 @@ class OverlayService : Service() {
     companion object {
         const val ACTION_HIDE = "com.barccelo.stickit.HIDE_SELECTOR"
         const val ACTION_SHOW = "com.barccelo.stickit.SHOW_SELECTOR"
+        private var active: WeakReference<OverlayService>? = null
+        fun dismissOpenPicker() {
+            active?.get()?.pickerController?.dismiss()
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        active = WeakReference(this)
         if (!Settings.canDrawOverlays(this)) { stopSelf(); return }
         windows = getSystemService(WINDOW_SERVICE) as WindowManager
         store = StickerStore(this)
@@ -179,6 +185,7 @@ class OverlayService : Service() {
     }
 
     override fun onDestroy() {
+        if (active?.get() === this) active = null
         preferences.edit().putBoolean("overlay_enabled", false).apply()
         pickerController?.dismiss()
         pickerController = null

@@ -24,6 +24,50 @@ object InputTriggerMatcher {
         return word.takeIf { it.length in 3..30 }
     }
 
+
+    /**
+     * Candidate suffixes longest first. Multiword tags match even when typed
+     * after other words. Short 1–2 character names/tags are exact-only.
+     */
+    fun trailingCandidates(text: String): List<String> {
+        if (text.isEmpty() || !text.last().isLetterOrDigit()) return emptyList()
+        val tail = text.takeLast(100)
+            .takeLastWhile { it.isLetterOrDigit() || it == ' ' || it == '-' || it == '_' }
+            .trim()
+        if (tail.isEmpty()) return emptyList()
+        val words = tail.split(Regex("[\\s_-]+")).filter { it.isNotBlank() }
+        return (minOf(words.size, 4) downTo 1).map { count ->
+            words.takeLast(count).joinToString(" ")
+        }.filter { it.length <= 60 }
+    }
+
+    fun matchesLabel(candidate: String, label: String): Boolean {
+        val query = candidate.trim()
+        if (query.isEmpty()) return false
+        val normalized = label.trim()
+        // A two-letter label such as "Eu" should match only "Eu", never
+        // every label starting with E or containing "eu".
+        if (query.length < 3) return normalized.equals(query, ignoreCase = true)
+        val words = normalized.split(Regex("[^\\p{L}\\p{N}]+"))
+            .filter { it.isNotBlank() }
+        if (words.isEmpty()) return false
+        val phrase = query.split(Regex("[\\s_-]+"))
+            .filter { it.isNotBlank() }
+        if (phrase.isEmpty()) return false
+        if (phrase.size == 1) {
+            return words.any { it.startsWith(phrase[0], ignoreCase = true) }
+        }
+        // Match complete phrases as well as prefixes of the last word,
+        // e.g. "brazos cruz" -> "brazos cruzados".
+        return (0..(words.size - phrase.size)).any { start ->
+            phrase.indices.all { pos ->
+                if (pos == phrase.lastIndex)
+                    words[start + pos].startsWith(phrase[pos], ignoreCase = true)
+                else words[start + pos].equals(phrase[pos], ignoreCase = true)
+            }
+        }
+    }
+
     fun emoji(text: String, associated: Collection<String>): String? {
         if (text.isEmpty()) return null
         val tail = text.takeLast(32)

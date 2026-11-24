@@ -37,4 +37,30 @@ class InputTriggerMatcherTest {
         assertNull(InputTriggerMatcher.shortcut("hello", listOf("stk")))
         assertNull(InputTriggerMatcher.shortcut("x", listOf("x")))
     }
+
+    @Test fun matchesMultiwordTagFromBeginningMiddleAndCompletePhrase() {
+        val label = "brazos cruzados"
+        assertTrue(InputTriggerMatcher.matchesLabel("brazos", label))
+        assertTrue(InputTriggerMatcher.matchesLabel("cruzados", label))
+        assertTrue(InputTriggerMatcher.matchesLabel("brazos cruzados", label))
+        assertTrue(InputTriggerMatcher.matchesLabel("brazos cruz", label))
+        assertEquals(listOf("brazos cruzados", "cruzados"),
+            InputTriggerMatcher.trailingCandidates("mira brazos cruzados").take(2))
+    }
+
+    @Test fun shortNameRequiresExactMatchAndAvoidsNoisyPrefixes() {
+        assertTrue(InputTriggerMatcher.matchesLabel("Eu", "Eu"))
+        assertTrue(InputTriggerMatcher.matchesLabel("e", "E"))
+        assertFalse(InputTriggerMatcher.matchesLabel("Eu", "Euforia"))
+        assertFalse(InputTriggerMatcher.matchesLabel("u", "Eu"))
+        assertTrue(InputTriggerMatcher.trailingCandidates("hola Eu").contains("Eu"))
+        assertTrue(InputTriggerMatcher.trailingCandidates("hola E").contains("E"))
+        assertTrue(InputTriggerMatcher.trailingCandidates("hola ").isEmpty())
+    }
+
+    @Test fun longerTagsMatchAnywhereOnlyAtWordBoundary() {
+        assertTrue(InputTriggerMatcher.matchesLabel("cruzados", "manos y brazos cruzados"))
+        assertFalse(InputTriggerMatcher.matchesLabel("ruzados", "brazos cruzados"))
+        assertTrue(InputTriggerMatcher.matchesLabel("hola mun", "hola mundo"))
+    }
 }

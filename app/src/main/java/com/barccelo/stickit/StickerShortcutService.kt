@@ -74,41 +74,48 @@ class StickerShortcutService : AccessibilityService() {
     }
 
     /**
-     * Delete only the exact emoji that generated the suggestion. A focused
-     * editable WhatsApp field and a cursor at the end are mandatory. No chat
-     * history is stored; the operation runs only after the user taps a sticker.
+     * Remove only the exact trigger the user typed at the END of an editable
+     * WhatsApp message. Never edit older text, a selection or other apps.
      */
-    private fun removeSuggestedEmoji(emoji: String): Boolean {
-        if (emoji.isBlank()) return false
-        val editor = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-            ?: return false
+    private fun removeTypedSuffix(editor: AccessibilityNodeInfo?, suffix: String,
+        ignoreCase: Boolean = true, wordBoundary: Boolean = false): Boolean {
+        if (suffix.isBlank() || editor == null) return false
         if (!ShortcutSettings.isAllowedApp(editor.packageName) ||
             !editor.isEditable || editor.isPassword || !editor.isFocused) return false
-        val content = editor.text?.toString() ?: return false
-        if (!content.endsWith(emoji) ||
-            editor.textSelectionStart != content.length ||
-            editor.textSelectionEnd != content.length) return false
-        val trimmed = content.dropLast(emoji.length)
+        val current = editor.text?.toString() ?: return false
+        if (!current.endsWith(suffix, ignoreCase) ||
+            editor.textSelectionStart != current.length ||
+            editor.textSelectionEnd != current.length) return false
+        val first = current.length - suffix.length
+        if (wordBoundary && first > 0 && current[first - 1].isLetterOrDigit()) return false
         val args = Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                trimmed)
+                current.dropLast(suffix.length))
         }
         return editor.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
+
+    private fun removeSuggestion(suffix: String): Boolean =
+        removeTypedSuffix(rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT),
+            suffix, ignoreCase = true)
+
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null || !::picker.isInitialized) return
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
             event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
             val target = event.packageName?.toString().orEmpty()
+            val currentTop = rootInActiveWindow?.packageName?.toString().orEmpty()
             // Recents/overview is hosted by Samsung One UI Home or SystemUI.
             // Hide the full picker instead of leaving it over task thumbnails.
             val overviewHost = target in setOf(
                 "com.sec.android.app.launcher", "com.android.systemui",
                 "com.android.launcher3", "com.google.android.apps.nexuslauncher"
             )
-            if (overviewHost) {
+            if (overviewHost || currentTop in setOf("com.sec.android.app.launcher",
+                    "com.android.launcher3", "com.google.android.apps.nexuslauncher")) {
                 picker.dismiss()
+                OverlayService.dismissOpenPicker()
                 shortcutArmed = true
             } else if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
                 val top = rootInActiveWindow?.packageName
@@ -137,6 +144,9 @@ class StickerShortcutService : AccessibilityService() {
             picker.hideSuggestions()
             if (shortcutArmed) {
                 shortcutArmed = false
+                // Do this while the WhatsApp edit field still owns focus:
+                // showing a focusable overlay can move accessibility focus.
+                removeTypedSuffix(source, trigger, wordBoundary = true)
                 picker.showPicker()
             }
             return
@@ -148,33 +158,36 @@ class StickerShortcutService : AccessibilityService() {
             return
         }
 
-        val potentialWord = InputTriggerMatcher.trailingWord(suffix)
-        // Avoid even querying the local library for single-character typing.
-        if (potentialWord == null && suffix.lastOrNull()?.isLetterOrDigit() == true) {
-            picker.hideSuggestions()
-            return
-        }
         val catalog = catalog()
         val linked = catalog.asSequence().flatMap { it.emojiList().asSequence() }
             .distinct().toList()
         val emoji = InputTriggerMatcher.emoji(suffix, linked)
-        val word = if (emoji == null) potentialWord else null
-        val matches = when {
-            emoji != null -> catalog.filter { emoji in it.emojiList() }
-            word != null -> catalog.filter { sticker ->
-                sticker.tagList().any { it.startsWith(word, ignoreCase = true) } ||
-                    sticker.name.split(" ", "-", "_").any {
-                        it.startsWith(word, ignoreCase = true)
-                    }
+        val candidates = if (emoji != null) listOf(emoji)
+            else InputTriggerMatcher.trailingCandidates(suffix)
+        val chosen = candidates.firstNotNullOfOrNull { candidate ->
+            val found = if (emoji != null) {
+                catalog.filter { candidate in it.emojiList() }
+            } else {
+                catalog.filter { sticker ->
+                    InputTriggerMatcher.matchesLabel(candidate, sticker.name) ||
+                        sticker.tagList().any {
+                            InputTriggerMatcher.matchesLabel(candidate, it)
+                        }
+                }
             }
-            else -> emptyList()
-        }.sortedWith(compareByDescending<Sticker> { it.favorite }
-            .thenByDescending { it.lastUsed }
-            .thenByDescending { it.uses })
-            .take(5)
-        if (matches.isEmpty()) picker.hideSuggestions()
-        else picker.showSuggestions(emoji ?: word ?: "", matches,
-            if (emoji != null) ({ removeSuggestedEmoji(emoji) }) else null)
+            if (found.isEmpty()) null else candidate to found
+        }
+        if (chosen == null) {
+            picker.hideSuggestions()
+            return
+        }
+        val matches = chosen.second.sortedWith(
+            compareByDescending<Sticker> { it.favorite }
+                .thenByDescending { it.lastUsed }
+                .thenByDescending { it.uses }).take(5)
+        picker.showSuggestions(chosen.first, matches) {
+            removeSuggestion(chosen.first)
+        }
     }
 
     override fun onInterrupt() {
