@@ -1,6 +1,7 @@
 package com.barccelo.stickit
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.ImageDecoder
 import android.graphics.PixelFormat
@@ -45,6 +46,26 @@ class StickerFloatingPicker(
     private var suggestionParams: WindowManager.LayoutParams? = null
 
     val isOpen: Boolean get() = picker != null
+
+    private val dark: Boolean get() = AppearanceSettings.isDark(context)
+    private val ink: Int get() = if (dark) Color.rgb(240, 242, 250)
+        else Color.rgb(28, 34, 51)
+    private val accent: Int get() = if (dark) Color.rgb(174, 187, 255)
+        else Color.rgb(72, 85, 178)
+    private val accentInk: Int get() = if (dark) Color.rgb(22, 31, 62)
+        else Color.WHITE
+    private val muted: Int get() = if (dark) Color.rgb(170, 179, 200)
+        else Color.rgb(127, 135, 153)
+    private val panelBg: Int get() = if (dark) Color.rgb(27, 30, 41)
+        else Color.rgb(250, 250, 253)
+    private val fieldBg: Int get() = if (dark) Color.rgb(40, 44, 59)
+        else Color.WHITE
+    private val tileBg: Int get() = if (dark) Color.rgb(42, 47, 63)
+        else Color.rgb(241, 242, 248)
+    private val edge: Int get() = if (dark) Color.rgb(61, 68, 87)
+        else Color.rgb(220, 223, 236)
+    private val chipBg: Int get() = if (dark) Color.rgb(47, 53, 73)
+        else chipBg
     private fun dp(value: Int) = (value * context.resources.displayMetrics.density).roundToInt()
     private fun unDp(value: Int) = (value / context.resources.displayMetrics.density).roundToInt()
 
@@ -56,7 +77,7 @@ class StickerFloatingPicker(
         }
 
     private fun label(
-        value: String, size: Float = 14f, color: Int = Color.rgb(28, 34, 51)
+        value: String, size: Float = 14f, color: Int = ink
     ) = TextView(context).apply {
         text = value
         textSize = size
@@ -70,7 +91,7 @@ class StickerFloatingPicker(
         if (picker != null) return
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            background = shape(Color.rgb(250, 250, 253), 24, Color.rgb(220, 223, 236))
+            background = shape(panelBg, 24, edge)
             setPadding(dp(12), dp(6), dp(12), dp(10))
             isFocusableInTouchMode = true
         }
@@ -91,7 +112,7 @@ class StickerFloatingPicker(
             gravity = Gravity.CENTER_VERTICAL
             orientation = LinearLayout.HORIZONTAL
         }
-        val handle = label("━━━━", 16f, Color.rgb(145, 153, 183)).apply {
+        val handle = label("━━━━", 16f, muted).apply {
             gravity = Gravity.CENTER
             contentDescription = "Arrastrar hacia arriba o abajo para ajustar el tamaño"
         }
@@ -100,21 +121,25 @@ class StickerFloatingPicker(
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, dp(38), 1f))
 
-        fun resize(deltaDp: Int) {
-            val newSize = (unDp(params.height) + deltaDp).coerceIn(230, 540)
-            params.height = dp(newSize)
-            ShortcutSettings.setPanelHeightDp(context, newSize)
-            try { windows.updateViewLayout(root, params) } catch (_: Exception) {}
-        }
         fun action(title: String, description: String, callback: () -> Unit) {
-            header.addView(label(title, 23f, Color.rgb(72, 85, 178)).apply {
+            header.addView(label(title, 22f, accent).apply {
                 gravity = Gravity.CENTER
                 contentDescription = description
                 setOnClickListener { callback() }
-            }, LinearLayout.LayoutParams(dp(40), dp(38)))
+            }, LinearLayout.LayoutParams(dp(42), dp(38)))
         }
-        action("−", "Reducir altura") { resize(-50) }
-        action("+", "Ampliar altura") { resize(50) }
+        action("⊕", "Crear sticker rápidamente") {
+            hidePicker()
+            try {
+                context.startActivity(Intent(context, MainActivity::class.java).apply {
+                    action = MainActivity.ACTION_QUICK_IMPORT
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                })
+            } catch (_: Exception) {
+                Toast.makeText(context, "No se pudo abrir la creación de stickers",
+                    Toast.LENGTH_SHORT).show()
+            }
+        }
         action("×", "Cerrar selector") { hidePicker() }
         root.addView(header)
         var startY = 0f
@@ -145,10 +170,10 @@ class StickerFloatingPicker(
             hint = "Buscar por nombre, etiqueta, emoji o paquete"
             textSize = 14f
             setSingleLine(true)
-            setTextColor(Color.rgb(29, 34, 51))
-            setHintTextColor(Color.rgb(137, 142, 161))
+            setTextColor(ink)
+            setHintTextColor(muted)
             setPadding(dp(14), 0, dp(14), 0)
-            background = shape(Color.WHITE, 13, Color.rgb(228, 230, 239))
+            background = shape(fieldBg, 13, edge)
             contentDescription = "Buscar stickers"
         }
         root.addView(search, LinearLayout.LayoutParams(-1, dp(45)))
@@ -172,7 +197,7 @@ class StickerFloatingPicker(
             stretchMode = android.widget.GridView.STRETCH_COLUMN_WIDTH
         }
         val noResults = label("No hay stickers para esta búsqueda", 14f,
-            Color.rgb(127, 135, 153)).apply {
+            muted).apply {
             gravity = Gravity.CENTER
             visibility = View.GONE
         }
@@ -182,7 +207,7 @@ class StickerFloatingPicker(
         }
         root.addView(holder, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(label("Toca para copiar · después pega en WhatsApp", 11f,
-            Color.rgb(121, 129, 146)).apply { gravity = Gravity.CENTER },
+            muted).apply { gravity = Gravity.CENTER },
             LinearLayout.LayoutParams(-1, dp(26)))
 
         val packs = store.all().map(Sticker::pack).distinct().sorted()
@@ -200,7 +225,7 @@ class StickerFloatingPicker(
                 val view = (convertView as? ImageView) ?: ImageView(context).apply {
                     scaleType = ImageView.ScaleType.FIT_CENTER
                     setPadding(dp(5), dp(5), dp(5), dp(5))
-                    background = shape(Color.rgb(241, 242, 248), 12)
+                    background = shape(tileBg, 12)
                     layoutParams = android.widget.AbsListView.LayoutParams(-1, dp(82))
                 }
                 (view.drawable as? AnimatedImageDrawable)?.stop()
@@ -239,21 +264,21 @@ class StickerFloatingPicker(
         }
         for (choice in choices) {
             filters.addView(label(if (choice.startsWith("Paquete: ")) choice.removePrefix("Paquete: ")
-                else choice, 12f, if (choice == activeFilter) Color.WHITE
-                else Color.rgb(72, 85, 178)).apply {
+                else choice, 12f, if (choice == activeFilter) accentInk
+                else accent).apply {
                 gravity = Gravity.CENTER
                 setPadding(dp(12), 0, dp(12), 0)
-                background = shape(if (choice == activeFilter) Color.rgb(72, 85, 178)
-                    else Color.rgb(236, 238, 249), 14)
+                background = shape(if (choice == activeFilter) accent
+                    else chipBg, 14)
                 setOnClickListener {
                     activeFilter = choice
                     filters.children().forEachIndexed { index, view ->
                         view.background = shape(
-                            if (choices[index] == choice) Color.rgb(72, 85, 178)
-                            else Color.rgb(236, 238, 249), 14)
+                            if (choices[index] == choice) accent
+                            else chipBg, 14)
                         (view as TextView).setTextColor(
-                            if (choices[index] == choice) Color.WHITE
-                            else Color.rgb(72, 85, 178))
+                            if (choices[index] == choice) accentInk
+                            else accent)
                     }
                     render()
                 }
@@ -285,7 +310,7 @@ class StickerFloatingPicker(
     private fun imageView(sticker: Sticker): ImageView = ImageView(context).apply {
         scaleType = ImageView.ScaleType.FIT_CENTER
         setPadding(dp(5), dp(5), dp(5), dp(5))
-        background = shape(Color.rgb(241, 242, 248), 12)
+        background = shape(tileBg, 12)
         try {
             val drawable = ImageDecoder.decodeDrawable(
                 ImageDecoder.createSource(store.stickerFile(sticker))
@@ -295,14 +320,19 @@ class StickerFloatingPicker(
         } catch (_: Exception) { }
     }
 
-    private fun copyAndClose(sticker: Sticker) {
+    private fun copyAndClose(sticker: Sticker, removeEmoji: (() -> Boolean)? = null) {
         try {
             val file = store.stickerFile(sticker)
             ClipboardBridge.copyGif(context, file)
+            // Deleting a trigger requires a guarded accessibility action.
+            // Do it only for an emoji suggestion, never for ordinary search.
+            val cleared = removeEmoji?.invoke() ?: true
             store.markUsed(sticker)
             hidePicker()
             hideSuggestions()
-            Toast.makeText(context, "Sticker copiado · pégalo en WhatsApp",
+            Toast.makeText(context, if (cleared)
+                "Sticker copiado · pégalo en WhatsApp"
+                else "Sticker copiado; borra el emoji manualmente",
                 Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(context, "No se pudo copiar: ${e.message}",
@@ -320,7 +350,8 @@ class StickerFloatingPicker(
      * Compact draggable suggestion strip. Its position, including vertical
      * offset above the keyboard, is saved per device, never per conversation.
      */
-    fun showSuggestions(matchedEmoji: String, stickers: List<Sticker>) {
+    fun showSuggestions(matchedEmoji: String, stickers: List<Sticker>,
+        removeEmoji: (() -> Boolean)? = null) {
         if (isOpen || stickers.isEmpty()) {
             hideSuggestions()
             return
@@ -332,7 +363,7 @@ class StickerFloatingPicker(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(7), dp(6), dp(7), dp(6))
-            background = shape(Color.rgb(251, 251, 254), 19, Color.rgb(223, 226, 239))
+            background = shape(panelBg, 19, edge)
             elevation = dp(4).toFloat()
         }
         val params = WindowManager.LayoutParams(
@@ -347,7 +378,7 @@ class StickerFloatingPicker(
             x = dp(ShortcutSettings.suggestX(context))
             y = dp(ShortcutSettings.suggestY(context))
         }
-        val grab = label("⋮⋮", 18f, Color.rgb(139, 149, 181)).apply {
+        val grab = label("⋮⋮", 18f, muted).apply {
             gravity = Gravity.CENTER
             contentDescription = "Mover sugerencias de stickers"
         }
@@ -383,12 +414,12 @@ class StickerFloatingPicker(
         stickers.take(5).forEach { sticker ->
             val view = imageView(sticker)
             view.contentDescription = "Copiar sugerencia: ${sticker.name}"
-            view.setOnClickListener { copyAndClose(sticker) }
+            view.setOnClickListener { copyAndClose(sticker, removeEmoji) }
             bar.addView(view, LinearLayout.LayoutParams(dp(50), dp(50)).apply {
                 setMargins(dp(3), 0, dp(3), 0)
             })
         }
-        val close = label("×", 22f, Color.rgb(132, 139, 159)).apply {
+        val close = label("×", 22f, muted).apply {
             gravity = Gravity.CENTER
             contentDescription = "Cerrar sugerencias"
             setOnClickListener { hideSuggestions() }
