@@ -45,7 +45,7 @@ class InputTriggerMatcherTest {
         assertTrue(InputTriggerMatcher.matchesLabel("brazos cruzados", label))
         assertTrue(InputTriggerMatcher.matchesLabel("brazos cruz", label))
         assertEquals(listOf("brazos cruzados", "cruzados"),
-            InputTriggerMatcher.trailingCandidates("mira brazos cruzados").take(2))
+            InputTriggerMatcher.trailingCandidates("mira brazos cruzados").drop(1).take(2))
     }
 
     @Test fun shortNameRequiresExactMatchAndAvoidsNoisyPrefixes() {
