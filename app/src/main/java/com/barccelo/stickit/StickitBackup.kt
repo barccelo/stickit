@@ -249,6 +249,47 @@ object StickitPackImport {
             java.util.zip.ZipFile(archive).use { zip ->
                 val entries = zip.entries().toList()
                 require(entries.size <= 500) { "El ZIP tiene demasiados archivos" }
+                // Some exported WhatsApp-compatible sticker packs contain
+                // contents.json with pack names and emoji tags. Read it only
+                // from an explicitly selected ZIP; never access WhatsApp data.
+                val labels = HashMap<String, Pair<String, String>>()
+                val manifest = entries.firstOrNull {
+                    it.name.substringAfterLast('/') == "contents.json" &&
+                        it.size in 1..1_000_000
+                }
+                if (manifest != null) {
+                    try {
+                        val info = zip.getInputStream(manifest).bufferedReader().use { reader ->
+                            JSONObject(reader.readText().take(1_000_000))
+                        }
+                        val groups = info.optJSONArray("sticker_packs")
+                        if (groups != null) {
+                            for (p in 0 until minOf(groups.length(), 200)) {
+                                val group = groups.optJSONObject(p) ?: continue
+                                val groupName = group.optString("name", pack).take(150)
+                                val identity = group.optString("identifier")
+                                val stickers = group.optJSONArray("stickers") ?: continue
+                                for (s in 0 until minOf(stickers.length(), 200)) {
+                                    val sticker = stickers.optJSONObject(s) ?: continue
+                                    val filename = sticker.optString("image_file")
+                                    if (filename.isBlank()) continue
+                                    val emojiArray = sticker.optJSONArray("emojis")
+                                    val tags = buildList {
+                                        if (emojiArray != null) for (i in 0 until minOf(emojiArray.length(), 20)) {
+                                            val emoji = emojiArray.optString(i)
+                                            if (emoji.isNotBlank()) add(emoji)
+                                        }
+                                    }.joinToString(", ")
+                                    labels[filename] = groupName to tags
+                                    labels["${identity}/${filename}"] = groupName to tags
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {
+                        // A malformed optional manifest does not prevent
+                        // importing the actual sticker images.
+                    }
+                }
                 for (entry in entries) {
                     if (entry.isDirectory) continue
                     val filename = entry.name.substringAfterLast('/').take(120)
@@ -275,7 +316,9 @@ object StickitPackImport {
                             }
                         }
                         try {
-                            importOne(context, store, tmp, filename.substringBeforeLast('.'), pack)
+                            val meta = labels[entry.name.trimStart('/')] ?: labels[filename]
+                            importOne(context, store, tmp, filename.substringBeforeLast('.'),
+                                meta?.first ?: pack, meta?.second.orEmpty())
                             added++
                         } catch (_: Exception) { skipped++ }
                     } finally {
@@ -316,10 +359,11 @@ object StickitPackImport {
         return Report(added, skipped)
     }
 
-    private fun importOne(context: Context, store: StickerStore, file: File, name: String, pack: String) {
+    private fun importOne(context: Context, store: StickerStore, file: File,
+        name: String, pack: String, tags: String = "") {
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         val gif = GifConverter.import(context, uri)
-        try { store.add(gif, name.take(150), "", pack.take(150)) }
+        try { store.add(gif, name.take(150), tags.take(1500), pack.take(150)) }
         catch (e: Exception) { gif.delete(); throw e }
     }
 }
