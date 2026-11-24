@@ -2,6 +2,8 @@ package com.barccelo.stickit
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.view.KeyEvent
 import android.graphics.Color
 import android.graphics.ImageDecoder
 import android.graphics.PixelFormat
@@ -44,6 +46,8 @@ class StickerFloatingPicker(
     private var suggestions: View? = null
     private var suggestionSignature = ""
     private var suggestionParams: WindowManager.LayoutParams? = null
+    private var backDispatcher: android.window.OnBackInvokedDispatcher? = null
+    private var backCallback: android.window.OnBackInvokedCallback? = null
 
     val isOpen: Boolean get() = picker != null
 
@@ -94,6 +98,18 @@ class StickerFloatingPicker(
             background = shape(panelBg, 24, edge)
             setPadding(dp(12), dp(6), dp(12), dp(10))
             isFocusableInTouchMode = true
+            setOnKeyListener { _, keyCode, event ->
+                if (keyCode == KeyEvent.KEYCODE_BACK) {
+                    if (event.action == KeyEvent.ACTION_UP) hidePicker()
+                    true
+                } else false
+            }
+            setOnTouchListener { _, event ->
+                if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+                    hidePicker()
+                    true
+                } else false
+            }
         }
         val height = ShortcutSettings.panelHeightDp(context)
         val params = WindowManager.LayoutParams(
@@ -165,6 +181,12 @@ class StickerFloatingPicker(
             setPadding(dp(14), 0, dp(14), 0)
             background = shape(fieldBg, 13, edge)
             contentDescription = "Buscar stickers"
+            setOnKeyListener { _, keyCode, event ->
+                if (keyCode == KeyEvent.KEYCODE_BACK) {
+                    if (event.action == KeyEvent.ACTION_UP) hidePicker()
+                    true
+                } else false
+            }
         }
         root.addView(search, LinearLayout.LayoutParams(-1, dp(45)))
         val filters = LinearLayout(context).apply {
@@ -267,11 +289,14 @@ class StickerFloatingPicker(
         }
         option("▣", "Pegar imagen copiada", "Desde el portapapeles",
             MainActivity.ACTION_QUICK_PASTE)
-        option("▧", "Elegir imagen, GIF o vídeo", "Galería, archivos o descargas",
+        option("▧", "Galería u otra aplicación", "Elige tu app de fotos o imágenes",
             MainActivity.ACTION_QUICK_IMPORT)
+        option("▤", "Examinar archivos", "Abre directamente el explorador de Android",
+            MainActivity.ACTION_QUICK_FILES)
         root.addView(createMenu, 1, LinearLayout.LayoutParams(-1, 0, 1f))
 
         val packs = store.packNames()
+        var order = StickerOrdering.current(context)
         var activeFilter = "Todos"
         val choices = listOf("Todos", "Favoritos") + packs.map { "Paquete: $it" }
         var visibleItems = emptyList<Sticker>()
@@ -306,22 +331,41 @@ class StickerFloatingPicker(
         grid.adapter = adapter
         fun render() {
             val query = search.text.toString().trim()
-            visibleItems = store.all().asSequence()
-                .filter { it.matches(query) }
-                .filter {
-                    when {
-                        activeFilter == "Favoritos" -> it.favorite
-                        activeFilter.startsWith("Paquete: ") ->
-                            it.pack == activeFilter.removePrefix("Paquete: ")
-                        else -> true
-                    }
+            visibleItems = StickerOrdering.sort(store.all().filter {
+                it.matches(query)
+            }.filter {
+                when {
+                    activeFilter == "Favoritos" -> it.favorite
+                    activeFilter.startsWith("Paquete: ") ->
+                        it.pack == activeFilter.removePrefix("Paquete: ")
+                    else -> true
                 }
-                .sortedWith(compareByDescending<Sticker> { it.favorite }
-                    .thenByDescending { it.lastUsed })
-                .toList()
+            }, order)
             adapter.notifyDataSetChanged()
             noResults.visibility = if (visibleItems.isEmpty()) View.VISIBLE else View.GONE
             grid.visibility = if (visibleItems.isEmpty()) View.GONE else View.VISIBLE
+        }
+        val ordering = label("↕ " + StickerOrdering.options[order], 12f, accent).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(12), 0, dp(12), 0)
+            background = shape(chipBg, 14)
+        }
+        filters.addView(ordering, LinearLayout.LayoutParams(-2, dp(32)).apply {
+            setMargins(0, 0, dp(7), 0)
+        })
+        ordering.setOnClickListener {
+            val popup = android.widget.PopupMenu(context, ordering)
+            StickerOrdering.options.forEachIndexed { index, name ->
+                popup.menu.add(0, index, index, name)
+            }
+            popup.setOnMenuItemClickListener { item ->
+                order = item.itemId
+                StickerOrdering.save(context, order)
+                ordering.text = "↕ " + StickerOrdering.options[order]
+                render()
+                true
+            }
+            popup.show()
         }
         for (choice in choices) {
             filters.addView(label(if (choice.startsWith("Paquete: ")) choice.removePrefix("Paquete: ")
@@ -360,6 +404,24 @@ class StickerFloatingPicker(
             picker = root
             pickerParams = params
             root.requestFocus()
+            if (Build.VERSION.SDK_INT >= 33) {
+                try {
+                    val dispatcher = root.findOnBackInvokedDispatcher()
+                    if (dispatcher != null) {
+                        val callback = android.window.OnBackInvokedCallback {
+                            hidePicker()
+                        }
+                        dispatcher.registerOnBackInvokedCallback(
+                            android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                            callback
+                        )
+                        backDispatcher = dispatcher
+                        backCallback = callback
+                    }
+                } catch (_: Exception) {
+                    // Physical back key still closes the overlay.
+                }
+            }
         } catch (_: Exception) {
             Toast.makeText(context, "No se pudo abrir el selector", Toast.LENGTH_SHORT).show()
         }
@@ -402,6 +464,15 @@ class StickerFloatingPicker(
     }
 
     fun hidePicker() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            val callback = backCallback
+            if (callback != null) {
+                try { backDispatcher?.unregisterOnBackInvokedCallback(callback) }
+                catch (_: Exception) { }
+            }
+        }
+        backCallback = null
+        backDispatcher = null
         picker?.let { try { windows.removeView(it) } catch (_: Exception) {} }
         picker = null
         pickerParams = null
