@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.RectF
+import android.graphics.Rect
 import com.bumptech.glide.gifdecoder.GifDecoder
 import com.bumptech.glide.gifdecoder.GifHeaderParser
 import com.bumptech.glide.gifdecoder.StandardGifDecoder
@@ -21,7 +22,8 @@ data class ArtworkEdits(
     val zoom: Float = 1f,
     val rotate: Int = 0,
     val mirror: Boolean = false,
-    val captionSize: Float = 18f
+    val captionSize: Float = 18f,
+    val crop: StickerCropArea = StickerCropArea()
 )
 
 /**
@@ -40,12 +42,13 @@ object StickerArtworkEditor {
     }
 
     fun apply(file: File, changes: ArtworkEdits) {
-        require(changes.zoom in 1f..2.5f && changes.rotate % 90 == 0)
+        require(changes.zoom in 1f..2.5f && changes.rotate % 90 == 0 &&
+            changes.crop.valid())
         require(file.exists() && file.length() <= 25_000_000) { "Archivo GIF no válido" }
         val input = file.readBytes()
         val header = GifHeaderParser().setData(ByteBuffer.wrap(input)).parseHeader()
         val delays = GifFrameTiming.delaysCentiseconds(input)
-        require(header.numFrames in 1..150 && delays.size == header.numFrames) {
+        require(header.numFrames in 1..350 && delays.size == header.numFrames) {
             "No se puede editar esta animación"
         }
         val tmp = File(file.parentFile, file.nameWithoutExtension + ".editing.gif")
@@ -93,21 +96,45 @@ object StickerArtworkEditor {
 
     private fun render(input: Bitmap, settings: ArtworkEdits): IntArray {
         val size = 256
+        val stage = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         try {
-            val canvas = Canvas(bitmap)
-            canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-            canvas.save()
-            canvas.translate(size / 2f, size / 2f)
-            if (settings.mirror) canvas.scale(-1f, 1f)
-            canvas.rotate(settings.rotate.toFloat())
+            val stageCanvas = Canvas(stage)
+            stageCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+            stageCanvas.save()
+            stageCanvas.translate(size / 2f, size / 2f)
+            if (settings.mirror) stageCanvas.scale(-1f, 1f)
+            stageCanvas.rotate(settings.rotate.toFloat())
             val fitted = min(size.toFloat() / input.width, size.toFloat() / input.height) *
                 settings.zoom
             val w = input.width * fitted
             val h = input.height * fitted
-            canvas.drawBitmap(input, null, RectF(-w / 2, -h / 2, w / 2, h / 2),
+            stageCanvas.drawBitmap(input, null,
+                RectF(-w / 2, -h / 2, w / 2, h / 2),
                 Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
-            canvas.restore()
+            stageCanvas.restore()
+
+            // A real crop: select a rectangle in the original square
+            // composition, then fit the selected pixels to the sticker canvas.
+            // Preserve aspect ratio and transparency instead of stretching.
+            val region = settings.crop
+            val left = (region.left * size).toInt().coerceIn(0, size - 1)
+            val top = (region.top * size).toInt().coerceIn(0, size - 1)
+            val right = kotlin.math.ceil(region.right * size).toInt()
+                .coerceIn(left + 1, size)
+            val bottom = kotlin.math.ceil(region.bottom * size).toInt()
+                .coerceIn(top + 1, size)
+            val sourceW = (right - left).toFloat()
+            val sourceH = (bottom - top).toFloat()
+            val fit = min(size / sourceW, size / sourceH)
+            val outputW = sourceW * fit
+            val outputH = sourceH * fit
+            val canvas = Canvas(bitmap)
+            canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+            canvas.drawBitmap(stage, Rect(left, top, right, bottom),
+                RectF((size - outputW) / 2, (size - outputH) / 2,
+                    (size + outputW) / 2, (size + outputH) / 2),
+                Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
             val caption = settings.caption.trim().take(100)
             if (caption.isNotEmpty()) {
                 val sizeText = settings.captionSize.coerceIn(14f, 30f)
@@ -140,6 +167,9 @@ object StickerArtworkEditor {
             return IntArray(size * size).also {
                 bitmap.getPixels(it, 0, size, 0, 0, size, size)
             }
-        } finally { bitmap.recycle() }
+        } finally {
+            stage.recycle()
+            bitmap.recycle()
+        }
     }
 }
