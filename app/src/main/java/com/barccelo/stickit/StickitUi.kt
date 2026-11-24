@@ -38,12 +38,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import java.io.File
 
-private val Ink = Color(0xFF1D2233)
-private val Indigo = Color(0xFF4855B2)
-private val Secondary = Color(0xFF80889A)
-private val Background = Color(0xFFFAFAFC)
-private val Light = Color(0xFFF1F2F8)
-private val Stroke = Color(0xFFE8EAF2)
+private val Ink: Color @Composable get() = MaterialTheme.colorScheme.onSurface
+private val Indigo: Color @Composable get() = MaterialTheme.colorScheme.primary
+private val Secondary: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val Background: Color @Composable get() = MaterialTheme.colorScheme.background
+private val Light: Color @Composable get() = MaterialTheme.colorScheme.surfaceVariant
+private val Stroke: Color @Composable get() = MaterialTheme.colorScheme.outlineVariant
 
 @Composable
 fun StickerPreview(file: File, modifier: Modifier = Modifier) {
@@ -76,7 +76,7 @@ private fun StickerTile(
 ) {
     Surface(
         shape = RoundedCornerShape(20.dp),
-        color = if (selected) Color(0xFFEDEFFC) else Color.White,
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
         border = BorderStroke(if (selected) 1.5.dp else 1.dp,
             if (selected) Indigo else Stroke),
         modifier = Modifier.fillMaxWidth()
@@ -104,7 +104,7 @@ private fun StickerTile(
                         modifier = Modifier.align(Alignment.TopEnd).size(33.dp)) {
                         Icon(if (sticker.favorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
                             contentDescription = if (sticker.favorite) "Quitar favorito" else "Fijar favorito",
-                            tint = if (sticker.favorite) Color(0xFFCE9A39) else Secondary,
+                            tint = if (sticker.favorite) MaterialTheme.colorScheme.tertiary else Secondary,
                             modifier = Modifier.size(19.dp))
                     }
                 }
@@ -140,6 +140,8 @@ fun StickitHome(
     previewVersion: Int,
     busy: Boolean,
     overlayEnabled: Boolean,
+    themeMode: Int,
+    onChangeTheme: (Int) -> Unit,
     shortcutEnabled: Boolean,
     shortcutPhrases: List<String>,
     emojiSuggestions: Boolean,
@@ -193,7 +195,7 @@ fun StickitHome(
         containerColor = Background,
         bottomBar = {
             if (selected.isNotEmpty()) {
-                Surface(color = Color.White, shadowElevation = 12.dp) {
+                Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 12.dp) {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text("${selected.size} seleccionados", fontWeight = FontWeight.SemiBold,
@@ -215,7 +217,7 @@ fun StickitHome(
                     }
                 }
             } else {
-                NavigationBar(containerColor = Color.White, tonalElevation = 2.dp) {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
                     listOf(
                         Triple("Biblioteca", Icons.Outlined.Collections, 0),
                         Triple("Paquetes", Icons.Outlined.Folder, 1),
@@ -282,7 +284,7 @@ fun StickitHome(
                 0 -> {
                     Column(Modifier.padding(horizontal = 20.dp)) {
                         Surface(shape = RoundedCornerShape(17.dp), border = BorderStroke(1.dp, Stroke),
-                            color = Color.White) {
+                            color = MaterialTheme.colorScheme.surface) {
                             OutlinedTextField(value = search, onValueChange = { search = it },
                                 leadingIcon = { Icon(Icons.Outlined.Search, null, tint = Secondary) },
                                 placeholder = { Text("Buscar nombres, caras o etiquetas",
@@ -291,9 +293,9 @@ fun StickitHome(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(17.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = Color.White,
-                                    unfocusedContainerColor = Color.White,
-                                    focusedBorderColor = Color(0xFFA7AFE9),
+                                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
                                     unfocusedBorderColor = Color.Transparent))
                         }
                         Spacer(Modifier.height(10.dp))
@@ -393,7 +395,7 @@ fun StickitHome(
                             bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                             lazyItems(packs) { pack ->
                                 val list = stickers.filter { it.pack.equals(pack, true) }
-                                Surface(color = Color.White, shape = RoundedCornerShape(19.dp),
+                                Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(19.dp),
                                     border = BorderStroke(1.dp, Stroke)) {
                                     Row(Modifier.fillMaxWidth().padding(9.dp),
                                         verticalAlignment = Alignment.CenterVertically) {
@@ -463,6 +465,20 @@ fun StickitHome(
                 else -> {
                     LazyColumn(contentPadding = PaddingValues(18.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        item {
+                            SettingsPanel("Apariencia", "Elige un tema o sigue los ajustes del teléfono") {
+                                Row(horizontalArrangement = Arrangement.spacedBy(7.dp),
+                                    modifier = Modifier.fillMaxWidth()) {
+                                    listOf("Sistema", "Claro", "Oscuro").forEachIndexed { index, option ->
+                                        FilterChip(selected = themeMode == index,
+                                            onClick = { onChangeTheme(index) },
+                                            label = { Text(option, fontSize = 12.sp) },
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(13.dp))
+                                    }
+                                }
+                            }
+                        }
                         item {
                             SettingsPanel("Acceso rápido", "Controla cuándo se muestra Stickit") {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -714,7 +730,7 @@ fun StickitHome(
 @Composable
 private fun SettingsPanel(title: String, subtitle: String,
     children: @Composable ColumnScope.() -> Unit) {
-    Surface(color = Color.White, shape = RoundedCornerShape(21.dp),
+    Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(21.dp),
         border = BorderStroke(1.dp, Stroke)) {
         Column(Modifier.fillMaxWidth().padding(17.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
