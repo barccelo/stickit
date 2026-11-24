@@ -8,15 +8,15 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * Convert an animated WebP into a WhatsApp-compatible GIF without changing
- * the original animation speed or silently cutting off the last frames.
+ * Full-duration animated WebP -> GIF conversion.
  *
- * libwebp reports the END timestamp of each frame. The older converter treated
- * these as presentation starts and also stopped decoding at 2,400 ms.
+ * IMPORTANT: WebPDecoder's JNI layer reuses a single bitmap_frame_ for all
+ * decoded frames. The Bitmap returned from decodeNextFrame() is decoder-owned.
+ * NEVER call Bitmap.recycle() on it: doing so invalidates native subsequent
+ * frame copies and makes sharing animated stickers fail.
  *
- * We decode timestamps first, plan accurate cumulative GIF delays and then
- * decode the frames again. This keeps memory bounded: only one Android bitmap
- * and one 256x256 ARGB frame are held at a time, even for longer animations.
+ * The two passes extract exact cumulative end timestamps and then encode
+ * frame content. No source frame is stored or recycled by this class.
  */
 internal object WebPStickerImport {
     fun convert(
@@ -33,47 +33,44 @@ internal object WebPStickerImport {
                 "Dimensiones WebP no admitidas"
             }
 
+            // Pass 1: read full source timestamps (end-of-frame milliseconds).
+            // Native decoder retains/reuses its Bitmap: do NOT recycle it.
             val frameEndTimes = ArrayList<Int>()
             while (decoder.hasNextFrame()) {
                 require(frameEndTimes.size < WebPFrameTiming.MAX_SOURCE_FRAMES) {
                     "La animación contiene demasiados fotogramas"
                 }
                 val result = decoder.decodeNextFrame()
-                val bitmap = result.frame
-                    ?: throw IllegalArgumentException(
-                        "No se pudo leer un fotograma del WebP")
-                try {
-                    frameEndTimes.add(result.timestamp)
-                    require(result.timestamp <= WebPFrameTiming.MAX_DURATION_MS) {
-                        "La animación supera 30 segundos. No se recortará."
-                    }
-                } finally {
-                    if (!bitmap.isRecycled) bitmap.recycle()
+                requireNotNull(result.frame) {
+                    "No se pudo leer un fotograma del WebP"
+                }
+                frameEndTimes.add(result.timestamp)
+                require(result.timestamp <= WebPFrameTiming.MAX_DURATION_MS) {
+                    "La animación supera 30 segundos. No se recortará."
                 }
             }
+
             val frames = WebPFrameTiming.plan(frameEndTimes)
             decoder.reset()
 
+            // Pass 2: use the same decoder-owned reusable bitmap. The
+            // square() converter makes and recycles only its OWN bitmap.
             FileOutputStream(destination).use { output ->
                 val gif = GifWriter(output)
                 var sourceIndex = 0
                 var written = 0
-
                 while (decoder.hasNextFrame() && written < frames.size) {
                     val result = decoder.decodeNextFrame()
                     val bitmap = result.frame
                         ?: throw IllegalArgumentException(
-                            "No se pudo leer un fotograma al convertir el WebP")
-                    try {
-                        if (sourceIndex == frames[written].sourceIndex) {
-                            gif.frame(
-                                square(bitmap),
-                                frames[written].delayCentiseconds
-                            )
-                            written++
-                        }
-                    } finally {
-                        if (!bitmap.isRecycled) bitmap.recycle()
+                            "No se pudo leer un fotograma al convertir el WebP"
+                        )
+                    if (sourceIndex == frames[written].sourceIndex) {
+                        gif.frame(
+                            square(bitmap),
+                            frames[written].delayCentiseconds
+                        )
+                        written++
                     }
                     sourceIndex++
                 }
@@ -83,6 +80,7 @@ internal object WebPStickerImport {
                 gif.finish()
             }
         } finally {
+            // Frees native decoder and its owned bitmap/buffer once.
             decoder.release()
         }
     }
