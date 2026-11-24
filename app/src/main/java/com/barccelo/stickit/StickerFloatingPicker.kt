@@ -200,7 +200,7 @@ class StickerFloatingPicker(
                 image.contentDescription = "Copiar ${sticker.name}"
                 image.setOnClickListener { copyAndClose(sticker) }
                 grid.addView(image, GridLayout.LayoutParams().apply {
-                    width = side; height = side
+                    this.width = side; this.height = side
                     setMargins(dp(2), dp(2), dp(2), dp(2))
                 })
             }
