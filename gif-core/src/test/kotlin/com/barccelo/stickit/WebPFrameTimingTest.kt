@@ -160,4 +160,13 @@ class WebPFrameTimingTest {
         assertEquals(2, output.single().sourceIndex)
         assertEquals(4, output.single().delayCentiseconds)
     }
+
+    @Test fun referenceCadenceLeavesAlreadyShortWebpsAtOriginalSpeed() {
+        val output = WebPFrameTiming.fullLengthAtReferenceCadence(
+            listOf(200, 400, 600, 800))
+        assertEquals(listOf(20, 20, 20, 20),
+            output.map { it.delayCentiseconds })
+        assertEquals(80, output.sumOf { it.delayCentiseconds })
+        assertEquals(3, output.last().sourceIndex)
+    }
 }

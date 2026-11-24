@@ -42,6 +42,12 @@ object WebPFrameTiming {
         require(totalMs <= MAX_DURATION_MS) {
             "La animación supera 30 segundos. No se recortará sin autorización."
         }
+        // Short WebPs already follow the proven 2.4-second reference.
+        // Keep their real hold times rather than speeding up animations
+        // that never had the WhatsApp long-GIF playback problem.
+        if (totalMs in 40..SHORT_REFERENCE_MS) {
+            return plan(frameEndTimesMs, COMPAT_FRAME_CAP, SHORT_REFERENCE_MS)
+        }
         val count = frameEndTimesMs.size
         val fastSource = totalMs.toLong() < count.toLong() * 40L
         val targetCount = if (fastSource) ((totalMs.toLong() + 39) / 40).toInt()
