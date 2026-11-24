@@ -101,7 +101,7 @@ internal object WhatsAppNativePacks {
         val root = root(context)
         val target = File(root, identifier)
         if (!target.isDirectory &&
-            root.listFiles()?.count { it.isDirectory && safeId.matches(it.name) } ?: 0 >= MAX_PACKS) {
+            (root.listFiles()?.count { it.isDirectory && safeId.matches(it.name) } ?: 0) >= MAX_PACKS) {
             throw IllegalArgumentException("WhatsApp admite hasta 10 paquetes desde Stickit.")
         }
         val selectedFirst = listOf(selected) + store.all().filter {
