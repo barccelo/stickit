@@ -21,6 +21,13 @@ import androidx.core.content.ContextCompat
 import java.io.File
 import java.util.concurrent.Executors
 
+private data class OperationProgress(
+    val title: String,
+    val detail: String = "Preparando…",
+    val completed: Int? = null,
+    val total: Int? = null
+)
+
 private val StickitIndigo = Color(0xFF4855B2)
 private val StickitInk = Color(0xFF1D2233)
 
@@ -45,6 +52,7 @@ class MainActivity : ComponentActivity() {
     private var pasteWhenFocused = false
     private var overlayActive by mutableStateOf(false)
     private var busy by mutableStateOf(false)
+    private var operationProgress by mutableStateOf<OperationProgress?>(null)
     private var previewVersion by mutableIntStateOf(0)
     private var shortcutEnabled by mutableStateOf(false)
     private var shortcutPhrases by mutableStateOf<List<String>>(listOf("STK"))
@@ -79,8 +87,10 @@ class MainActivity : ComponentActivity() {
         if (uri != null) pendingZip = uri
     }
     private val directoryPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) runTask {
-            val report = StickitPackImport.folder(this, store, uri)
+        if (uri != null) runTask(title = "Importando carpeta") {
+            val report = StickitPackImport.folder(this, store, uri) { done, total ->
+                publishProgress("Importando carpeta", "Procesando stickers…", done, total)
+            }
             "Carpeta importada: ${report.added} stickers, ${report.skipped} omitidos."
         }
     }
@@ -217,6 +227,35 @@ class MainActivity : ComponentActivity() {
                     }
                 )
 
+                val progress = operationProgress
+                if (progress != null) {
+                    AlertDialog(
+                        onDismissRequest = { /* Importation runs until completion. */ },
+                        title = { Text(progress.title) },
+                        text = {
+                            Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(
+                                androidx.compose.ui.unit.dp(12))) {
+                                Text(progress.detail)
+                                val total = progress.total
+                                val completed = progress.completed
+                                if (total != null && total > 0 && completed != null) {
+                                    LinearProgressIndicator(
+                                        progress = { completed.toFloat() / total.toFloat() },
+                                        modifier = androidx.compose.ui.Modifier.fillMaxWidth())
+                                    Text("${completed.coerceIn(0, total)} de $total archivos",
+                                        style = MaterialTheme.typography.bodySmall)
+                                } else {
+                                    LinearProgressIndicator(
+                                        modifier = androidx.compose.ui.Modifier.fillMaxWidth())
+                                }
+                                Text("La operación continúa sin interrumpir ni perder los archivos.",
+                                    style = MaterialTheme.typography.bodySmall)
+                            }
+                        },
+                        confirmButton = {}
+                    )
+                }
+
                 val sharedLink = pendingPackLink
                 if (sharedLink != null) {
                     AlertDialog(
@@ -262,11 +301,15 @@ class MainActivity : ComponentActivity() {
                         onImport = { name, tags, pack, emojis, editAfterImport ->
                             pendingImport = emptyList()
                             var editId: Long? = null
-                            runTask(task = {
+                            runTask(title = "Importando ${sources.size} sticker(s)", task = {
+                                publishProgress("Importando stickers", "Leyendo archivos…",
+                                    0, sources.size)
                                 var success = 0
                                 var failed = 0
                                 var firstFailure: String? = null
-                                sources.forEach { uri ->
+                                sources.forEachIndexed { position, uri ->
+                                    publishProgress("Importando stickers",
+                                        "Convirtiendo ${nameOf(uri)}", position, sources.size)
                                     var generated: File? = null
                                     try {
                                         generated = GifConverter.import(this, uri)
@@ -285,6 +328,8 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 }
+                                publishProgress("Importando stickers", "Finalizando…",
+                                    sources.size, sources.size)
                                 if (success == 0) {
                                     error("No se importó el sticker: ${firstFailure ?: "Error desconocido"}")
                                 }
@@ -304,8 +349,11 @@ class MainActivity : ComponentActivity() {
                         onDismiss = { pendingZip = null },
                         onConfirm = { pack ->
                             pendingZip = null
-                            runTask {
-                                val result = StickitPackImport.zip(this, store, uri, pack)
+                            runTask(title = "Importando paquete ZIP") {
+                                val result = StickitPackImport.zip(this, store, uri, pack) { done, total ->
+                                    publishProgress("Importando paquete ZIP",
+                                        "Procesando archivos del paquete…", done, total)
+                                }
                                 "${result.added} stickers importados · ${result.skipped} omitidos."
                             }
                         }
@@ -639,14 +687,25 @@ class MainActivity : ComponentActivity() {
         ContextCompat.startForegroundService(this, intent)
     }
 
-    private fun runTask(onSuccess: (() -> Unit)? = null, task: () -> String) {
+    private fun publishProgress(title: String, detail: String,
+        completed: Int? = null, total: Int? = null) {
+        runOnUiThread {
+            if (busy) operationProgress = OperationProgress(
+                title, detail, completed, total)
+        }
+    }
+
+    private fun runTask(title: String = "Procesando…",
+        onSuccess: (() -> Unit)? = null, task: () -> String) {
         if (busy) { notify("Hay una operación en curso"); return }
         busy = true
+        operationProgress = OperationProgress(title)
         worker.execute {
             try {
                 val message = task()
                 runOnUiThread {
                     busy = false
+                    operationProgress = null
                     previewVersion++
                     refresh()
                     refreshShortcutSettings()
@@ -658,6 +717,7 @@ class MainActivity : ComponentActivity() {
             } catch (e: Exception) {
                 runOnUiThread {
                     busy = false
+                    operationProgress = null
                     previewVersion++
                     refresh()
                     notify("No se pudo completar: ${e.message ?: "Error inesperado"}")

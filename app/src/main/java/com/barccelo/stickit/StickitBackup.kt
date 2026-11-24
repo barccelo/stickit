@@ -270,7 +270,8 @@ object StickitPackImport {
     data class Report(val added: Int, val skipped: Int)
     private val extensions = setOf("gif", "webp", "png", "jpeg", "jpg", "mp4", "webm")
 
-    fun zip(context: Context, store: StickerStore, uri: Uri, pack: String): Report {
+    fun zip(context: Context, store: StickerStore, uri: Uri, pack: String,
+        progress: ((Int, Int) -> Unit)? = null): Report {
         // Use random-access ZipFile. Skipped entries are never decompressed,
         // preventing a large unsupported ZIP member from exhausting resources.
         val archive = File(context.cacheDir, UUID.randomUUID().toString() + ".zip")
@@ -295,6 +296,7 @@ object StickitPackImport {
             java.util.zip.ZipFile(archive).use { zip ->
                 val entries = zip.entries().toList()
                 require(entries.size <= 500) { "El ZIP tiene demasiados archivos" }
+                progress?.invoke(0, entries.size)
                 // Some exported WhatsApp-compatible sticker packs contain
                 // contents.json with pack names and emoji tags. Read it only
                 // from an explicitly selected ZIP; never access WhatsApp data.
@@ -336,7 +338,8 @@ object StickitPackImport {
                         // importing the actual sticker images.
                     }
                 }
-                for (entry in entries) {
+                for ((position, entry) in entries.withIndex()) {
+                    progress?.invoke(position, entries.size)
                     if (entry.isDirectory) continue
                     val filename = entry.name.substringAfterLast('/').take(120)
                     val extension = filename.substringAfterLast('.', "").lowercase()
@@ -371,6 +374,7 @@ object StickitPackImport {
                         tmp.delete()
                     }
                 }
+                progress?.invoke(entries.size, entries.size)
             }
             return Report(added, skipped)
         } finally {
@@ -378,30 +382,42 @@ object StickitPackImport {
         }
     }
 
-    fun folder(context: Context, store: StickerStore, tree: Uri): Report {
+    fun folder(context: Context, store: StickerStore, tree: Uri,
+        progress: ((Int, Int) -> Unit)? = null): Report {
         val root = DocumentFile.fromTreeUri(context, tree) ?: error("Carpeta no accesible")
         var added = 0
         var skipped = 0
         var inspected = 0
-        fun walk(dir: DocumentFile, depth: Int, pack: String) {
+        // Enumerate first so that the user sees a real count and percentage.
+        val files = mutableListOf<Pair<DocumentFile, String>>()
+        fun collect(dir: DocumentFile, depth: Int, pack: String) {
             if (depth > 3) return
             for (child in dir.listFiles()) {
                 inspected++
                 require(inspected <= 500) { "Demasiados elementos en la carpeta" }
-                if (child.isDirectory) { walk(child, depth + 1, child.name ?: pack); continue }
-                val filename = child.name ?: "Sticker"
-                val ext = filename.substringAfterLast('.', "").lowercase()
-                if (!child.isFile || ext !in extensions || child.length() > 20_000_000L) {
-                    skipped++; continue
-                }
-                try {
-                    val file = GifConverter.import(context, child.uri)
-                    try { store.add(file, filename.substringBeforeLast('.').take(150), "", pack); added++ }
-                    catch (e: Exception) { file.delete(); throw e }
-                } catch (_: Exception) { skipped++ }
+                if (child.isDirectory) { collect(child, depth + 1, child.name ?: pack); continue }
+                files.add(child to pack)
             }
         }
-        walk(root, 0, root.name ?: "Colección importada")
+        collect(root, 0, root.name ?: "Colección importada")
+        progress?.invoke(0, files.size)
+        for ((index, pair) in files.withIndex()) {
+            val (child, pack) = pair
+            val filename = child.name ?: "Sticker"
+            val ext = filename.substringAfterLast('.', "").lowercase()
+            if (!child.isFile || ext !in extensions || child.length() > 20_000_000L) {
+                skipped++
+            } else {
+                try {
+                    val file = GifConverter.import(context, child.uri)
+                    try {
+                        store.add(file, filename.substringBeforeLast('.').take(150), "", pack)
+                        added++
+                    } catch (e: Exception) { file.delete(); throw e }
+                } catch (_: Exception) { skipped++ }
+            }
+            progress?.invoke(index + 1, files.size)
+        }
         return Report(added, skipped)
     }
 
