@@ -202,10 +202,14 @@ class StickerFloatingPicker(
 
         // Keep the options within the overlay instead of opening Files
         // immediately; clipboard access itself happens in the foreground app.
-        val createMenu = LinearLayout(context).apply {
+        val createContents = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(7), dp(4), dp(7))
+        }
+        val createMenu = ScrollView(context).apply {
+            isVerticalScrollBarEnabled = false
             visibility = View.GONE
+            addView(createContents)
         }
         fun showLibrary(show: Boolean) {
             createMenu.visibility = if (show) View.GONE else View.VISIBLE
@@ -216,11 +220,11 @@ class StickerFloatingPicker(
             footer.visibility = state
         }
         showQuickCreation = { showLibrary(false) }
-        createMenu.addView(label("‹  Volver a mis stickers", 13f, accent).apply {
+        createContents.addView(label("‹  Volver a mis stickers", 13f, accent).apply {
             setPadding(dp(8), 0, 0, 0)
             setOnClickListener { showLibrary(true) }
         }, LinearLayout.LayoutParams(-1, dp(33)))
-        createMenu.addView(label("Crear sticker", 17f, ink).apply {
+        createContents.addView(label("Crear sticker", 17f, ink).apply {
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(dp(8), 0, 0, 0)
         }, LinearLayout.LayoutParams(-1, dp(35)))
@@ -257,7 +261,7 @@ class StickerFloatingPicker(
                 })
                 addView(label(description, 11f, muted))
             }, LinearLayout.LayoutParams(0, -1, 1f))
-            createMenu.addView(line, LinearLayout.LayoutParams(-1, dp(67)).apply {
+            createContents.addView(line, LinearLayout.LayoutParams(-1, dp(67)).apply {
                 bottomMargin = dp(9)
             })
         }
