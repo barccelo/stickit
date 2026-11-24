@@ -32,6 +32,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val ACTION_QUICK_IMPORT = "com.barccelo.stickit.QUICK_IMPORT"
         const val ACTION_QUICK_PASTE = "com.barccelo.stickit.QUICK_PASTE"
+        const val ACTION_QUICK_FILES = "com.barccelo.stickit.QUICK_FILES"
     }
     private lateinit var store: StickerStore
     private val worker = Executors.newSingleThreadExecutor()
@@ -39,6 +40,7 @@ class MainActivity : ComponentActivity() {
     private var entries by mutableStateOf<List<Sticker>>(emptyList())
     private var packNames by mutableStateOf<List<String>>(emptyList())
     private var themeMode by mutableIntStateOf(AppearanceSettings.SYSTEM)
+    private var stickerOrder by mutableIntStateOf(StickerOrdering.NEWEST)
     private var pendingPackLink by mutableStateOf<String?>(null)
     private var pasteWhenFocused = false
     private var overlayActive by mutableStateOf(false)
@@ -56,6 +58,22 @@ class MainActivity : ComponentActivity() {
 
     private val mediaPicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) pendingImport = uris.take(100)
+    }
+    // ACTION_GET_CONTENT offers other installed galleries and image apps via
+    // Android's system chooser instead of forcing OpenDocument's file picker.
+    private val galleryPicker = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val intent = result.data
+            val chosen = mutableListOf<Uri>()
+            intent?.data?.let { chosen.add(it) }
+            intent?.clipData?.let { clips ->
+                for (index in 0 until clips.itemCount) {
+                    clips.getItemAt(index).uri?.let(chosen::add)
+                }
+            }
+            if (chosen.isNotEmpty()) pendingImport = chosen.distinct().take(100)
+        }
     }
     private val zipPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) pendingZip = uri
@@ -86,6 +104,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         store = StickerStore(this)
         themeMode = AppearanceSettings.mode(this)
+        stickerOrder = StickerOrdering.current(this)
         refreshShortcutSettings()
         refresh()
         processShareIntent(intent)
@@ -115,6 +134,11 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = colors) {
                 StickitHome(
                     stickers = entries,
+                    sortOrder = stickerOrder,
+                    onSortChange = { selection ->
+                        StickerOrdering.save(this, selection)
+                        stickerOrder = selection
+                    },
                     packs = packNames,
                     onCreatePack = { name ->
                         runTask { store.createPack(name); "Paquete creado." }
@@ -164,7 +188,7 @@ class MainActivity : ComponentActivity() {
                     },
                     onShowPicker = { showPickerPreview() },
                     onToggleOverlay = { if (it) enableOverlay() else disableOverlay() },
-                    onPick = { mediaPicker.launch(arrayOf("image/*", "video/*")) },
+                    onPick = { openMediaChooser() },
                     onPaste = { fromClipboard() },
                     onZip = { zipPicker.launch(arrayOf("application/zip",
                         "application/x-zip-compressed", "application/octet-stream")) },
@@ -235,9 +259,10 @@ class MainActivity : ComponentActivity() {
                     ImportStickersDialog(
                         count = sources.size, suggestedName = label,
                         onDismiss = { pendingImport = emptyList() },
-                        onImport = { name, tags, pack, emojis ->
+                        onImport = { name, tags, pack, emojis, editAfterImport ->
                             pendingImport = emptyList()
-                            runTask {
+                            var editId: Long? = null
+                            runTask(task = {
                                 var success = 0
                                 var failed = 0
                                 var firstFailure: String? = null
@@ -245,8 +270,10 @@ class MainActivity : ComponentActivity() {
                                     var generated: File? = null
                                     try {
                                         generated = GifConverter.import(this, uri)
-                                        store.add(generated, if (sources.size == 1) name
-                                            else nameOf(uri), tags, pack, emojis)
+                                        val storedId = store.add(generated,
+                                            if (sources.size == 1) name else nameOf(uri),
+                                            tags, pack, emojis)
+                                        if (editAfterImport && sources.size == 1) editId = storedId
                                         success++
                                     } catch (e: Exception) {
                                         generated?.delete()
@@ -263,7 +290,10 @@ class MainActivity : ComponentActivity() {
                                 }
                                 "$success guardados" + if (failed > 0)
                                     " · $failed omitidos: ${firstFailure ?: "Error de formato"}" else ""
-                            }
+                            }, onSuccess = {
+                                val id = editId
+                                if (id != null) artwork = entries.firstOrNull { it.id == id }
+                            })
                         }
                     )
                 }
@@ -359,7 +389,8 @@ class MainActivity : ComponentActivity() {
             }
         }
         when (intent?.action) {
-            ACTION_QUICK_IMPORT -> window.decorView.post {
+            ACTION_QUICK_IMPORT -> window.decorView.post { openMediaChooser() }
+            ACTION_QUICK_FILES -> window.decorView.post {
                 mediaPicker.launch(arrayOf("image/*", "video/*"))
             }
             ACTION_QUICK_PASTE -> requestClipboardPaste()
@@ -388,6 +419,7 @@ class MainActivity : ComponentActivity() {
             .getBoolean("overlay_enabled", false)
         refreshShortcutSettings()
         themeMode = AppearanceSettings.mode(this)
+        stickerOrder = StickerOrdering.current(this)
         if (::store.isInitialized) refresh()
     }
 
@@ -395,11 +427,29 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         when (intent.action) {
-            ACTION_QUICK_IMPORT -> window.decorView.post {
+            ACTION_QUICK_IMPORT -> window.decorView.post { openMediaChooser() }
+            ACTION_QUICK_FILES -> window.decorView.post {
                 mediaPicker.launch(arrayOf("image/*", "video/*"))
             }
-            ACTION_QUICK_PASTE -> window.decorView.post { fromClipboard() }
+            ACTION_QUICK_PASTE -> window.decorView.post { requestClipboardPaste() }
             else -> processShareIntent(intent)
+        }
+    }
+
+    private fun openMediaChooser() {
+        val target = Intent(Intent.ACTION_GET_CONTENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            galleryPicker.launch(Intent.createChooser(
+                target, "Elegir galería o aplicación"
+            ))
+        } catch (_: android.content.ActivityNotFoundException) {
+            mediaPicker.launch(arrayOf("image/*", "video/*"))
         }
     }
 
@@ -537,7 +587,7 @@ class MainActivity : ComponentActivity() {
         ContextCompat.startForegroundService(this, intent)
     }
 
-    private fun runTask(task: () -> String) {
+    private fun runTask(task: () -> String, onSuccess: (() -> Unit)? = null) {
         if (busy) { notify("Hay una operación en curso"); return }
         busy = true
         worker.execute {
@@ -549,6 +599,8 @@ class MainActivity : ComponentActivity() {
                     refresh()
                     refreshShortcutSettings()
                     themeMode = AppearanceSettings.mode(this)
+                    stickerOrder = StickerOrdering.current(this)
+                    onSuccess?.invoke()
                     notify(message)
                 }
             } catch (e: Exception) {
