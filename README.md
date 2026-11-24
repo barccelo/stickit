@@ -76,3 +76,14 @@ Stickit ya no recorta silenciosamente los WebP animados a 2,4 segundos. Para con
 ## Corrección de importación WebP — 0.4.3
 
 El decodificador nativo de WebP reutiliza el mismo objeto `Bitmap` al avanzar de fotograma. La versión anterior lo reciclaba indebidamente, impidiendo la importación de algunos stickers animados compartidos desde WhatsApp. La 0.4.3 conserva el fotograma bajo control del decodificador hasta liberar este, mantiene la duración original y proporciona el mensaje concreto si una conversión falla. Los stickers existentes no requieren migración.
+
+## Stickit 0.5.0 — Ordenación, recorte y selección de imágenes
+
+- **Orden persistente de stickers:** la biblioteca y el selector flotante comparten el orden elegido: más nuevos (predeterminado), nombre A–Z, utilizados recientemente, más utilizados o más antiguos. El selector permite cambiarlo desde la primera cápsula de filtros y la biblioteca desde el botón de ordenación.
+- **Cierre natural del selector:** Atrás (también mediante el despachador moderno de Android) cierra la ventana; tocar fuera también la descarta. Se conserva el botón X.
+- **Recorte real:** selecciona las esquinas o cualquiera de los cuatro lados para cambiar el área de recorte, o arrastra el centro para moverla. El editor muestra una cuadrícula de tercios, permite restablecer, girar, reflejar y añadir texto. La región seleccionada se recorta y se ajusta al cuadrado sin estirarla; se aplica a todos los fotogramas y respeta la cadencia del GIF.
+- **Edición al importar:** para un sticker individual pegado, compartido o elegido desde la galería, la opción «Editar y recortar al guardar» viene marcada. Tras guardar se abre directamente el editor; se puede desmarcar para importar sin editar.
+- **Aplicación de galería:** al seleccionar contenido se ofrece el diálogo nativo de aplicaciones capaces de proporcionar imágenes y vídeos (según las aplicaciones instaladas y las reglas del fabricante). También se mantiene una opción separada «Examinar archivos» desde el creador flotante.
+- **Respaldo local:** preserva la preferencia de ordenación. Las versiones anteriores de los archivos ZIP siguen siendo compatibles.
+
+No se modifica el conversor WebP/GIF que preserva la duración y velocidad de los stickers animados.
