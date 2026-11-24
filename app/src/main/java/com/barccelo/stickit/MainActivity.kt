@@ -35,6 +35,10 @@ class MainActivity : ComponentActivity() {
     private var overlayActive by mutableStateOf(false)
     private var busy by mutableStateOf(false)
     private var previewVersion by mutableIntStateOf(0)
+    private var shortcutEnabled by mutableStateOf(false)
+    private var shortcutPhrases by mutableStateOf<List<String>>(listOf("STK"))
+    private var emojiSuggestions by mutableStateOf(true)
+    private var pickerHeight by mutableIntStateOf(340)
 
     private var pendingImport by mutableStateOf<List<Uri>>(emptyList())
     private var pendingZip by mutableStateOf<Uri?>(null)
@@ -72,6 +76,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = StickerStore(this)
+        refreshShortcutSettings()
         refresh()
         processShareIntent(intent)
         setContent {
@@ -84,6 +89,30 @@ class MainActivity : ComponentActivity() {
                     stickers = entries, fileOf = { store.stickerFile(it) },
                     previewVersion = previewVersion,
                     busy = busy, overlayEnabled = overlayActive,
+                    shortcutEnabled = shortcutEnabled,
+                    shortcutPhrases = shortcutPhrases,
+                    emojiSuggestions = emojiSuggestions,
+                    pickerHeight = pickerHeight,
+                    onEnableShortcuts = {
+                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    },
+                    onAddShortcut = { text ->
+                        ShortcutSettings.savePhrases(this, shortcutPhrases + text)
+                        refreshShortcutSettings()
+                    },
+                    onRemoveShortcut = { text ->
+                        ShortcutSettings.savePhrases(this, shortcutPhrases.filterNot { it == text })
+                        refreshShortcutSettings()
+                    },
+                    onToggleSuggestions = { enabled ->
+                        ShortcutSettings.setSuggestionsEnabled(this, enabled)
+                        refreshShortcutSettings()
+                    },
+                    onChangePickerHeight = { height ->
+                        ShortcutSettings.setPanelHeightDp(this, height)
+                        refreshShortcutSettings()
+                    },
+                    onShowPicker = { showPickerPreview() },
                     onToggleOverlay = { if (it) enableOverlay() else disableOverlay() },
                     onPick = { mediaPicker.launch(arrayOf("image/*", "video/*")) },
                     onPaste = { fromClipboard() },
@@ -120,7 +149,7 @@ class MainActivity : ComponentActivity() {
                     ImportStickersDialog(
                         count = sources.size, suggestedName = label,
                         onDismiss = { pendingImport = emptyList() },
-                        onImport = { name, tags, pack ->
+                        onImport = { name, tags, pack, emojis ->
                             pendingImport = emptyList()
                             runTask {
                                 var success = 0; var failed = 0
@@ -129,7 +158,7 @@ class MainActivity : ComponentActivity() {
                                     try {
                                         generated = GifConverter.import(this, uri)
                                         store.add(generated, if (sources.size == 1) name
-                                            else nameOf(uri), tags, pack)
+                                            else nameOf(uri), tags, pack, emojis)
                                         success++
                                     } catch (e: Exception) {
                                         generated?.delete()
@@ -169,8 +198,8 @@ class MainActivity : ComponentActivity() {
                         canReprocess = File(gifFile.parentFile, "$base.source.gif").isFile,
                         canUndo = StickerArtworkEditor.canUndo(gifFile),
                         onDismiss = { editing = null },
-                        onSave = { name, tags, pack ->
-                            store.update(current, name, tags, pack)
+                        onSave = { name, tags, pack, emojis ->
+                            store.update(current, name, tags, pack, emojis)
                             editing = null
                             refresh()
                         },
@@ -230,6 +259,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         overlayActive = getSharedPreferences("stickit_ui", Context.MODE_PRIVATE)
             .getBoolean("overlay_enabled", false)
+        refreshShortcutSettings()
         if (::store.isInitialized) refresh()
     }
 
@@ -293,6 +323,28 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refresh() { entries = store.all() }
+
+    private fun refreshShortcutSettings() {
+        shortcutEnabled = StickerShortcutService.isEnabled(this)
+        shortcutPhrases = ShortcutSettings.phrases(this)
+        emojiSuggestions = ShortcutSettings.suggestionsEnabled(this)
+        pickerHeight = ShortcutSettings.panelHeightDp(this)
+    }
+
+    private fun showPickerPreview() {
+        val service = StickerShortcutService.active()
+        if (service != null) {
+            service.openPicker()
+            return
+        }
+        if (!Settings.canDrawOverlays(this)) {
+            notify("Para abrir el selector, activa Acceso rápido o los atajos de accesibilidad.")
+            return
+        }
+        val intent = Intent(this, OverlayService::class.java)
+            .setAction(OverlayService.ACTION_SHOW)
+        ContextCompat.startForegroundService(this, intent)
+    }
 
     private fun runTask(task: () -> String) {
         if (busy) { notify("Hay una operación en curso"); return }

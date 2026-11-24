@@ -61,6 +61,7 @@ object StickitBackup {
             row.put("id", id)
             row.put("name", sticker.name)
             row.put("tags", sticker.tags)
+            row.put("emojis", sticker.emojis)
             row.put("pack", sticker.pack)
             row.put("favorite", sticker.favorite)
             row.put("media", "media/$id.gif")
@@ -176,7 +177,8 @@ object StickitBackup {
                         destination,
                         row.optString("name", "Sticker").take(150),
                         row.optString("tags").take(1500),
-                        row.optString("pack", "General").take(150)
+                        row.optString("pack", "General").take(150),
+                        row.optString("emojis").take(1000)
                     )
                     newIds.add(id)
                     if (row.optBoolean("favorite")) store.setFavorite(id, true)
@@ -360,10 +362,10 @@ object StickitPackImport {
     }
 
     private fun importOne(context: Context, store: StickerStore, file: File,
-        name: String, pack: String, tags: String = "") {
+        name: String, pack: String, emojis: String = "") {
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         val gif = GifConverter.import(context, uri)
-        try { store.add(gif, name.take(150), tags.take(1500), pack.take(150)) }
+        try { store.add(gif, name.take(150), "", pack.take(150), emojis.take(1000)) }
         catch (e: Exception) { gif.delete(); throw e }
     }
 }

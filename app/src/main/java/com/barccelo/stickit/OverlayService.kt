@@ -46,6 +46,7 @@ class OverlayService : Service() {
 
     companion object {
         const val ACTION_HIDE = "com.barccelo.stickit.HIDE_SELECTOR"
+        const val ACTION_SHOW = "com.barccelo.stickit.SHOW_SELECTOR"
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -64,7 +65,14 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_HIDE) stopSelf()
+        when (intent?.action) {
+            ACTION_HIDE -> stopSelf()
+            ACTION_SHOW -> {
+                val accessible = StickerShortcutService.active()
+                if (accessible != null) accessible.openPicker()
+                else pickerController?.showPicker()
+            }
+        }
         return START_NOT_STICKY
     }
 
