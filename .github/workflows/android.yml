@@ -69,6 +69,17 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk
+      - name: Report signed APK size
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          BYTES="$(stat -c %s "$APK")"
+          MIB="$(awk -v bytes="$BYTES" 'BEGIN { printf "%.2f", bytes / 1048576 }')"
+          echo "Signed ARM64 release APK: $MIB MiB ($BYTES bytes)"
+          echo "### Stickit release size" >> "$GITHUB_STEP_SUMMARY"
+          echo "$MIB MiB ($BYTES bytes), ARM64-only, R8 optimized" >> "$GITHUB_STEP_SUMMARY"
       - name: Publish GitHub Release for Obtainium
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         shell: bash
