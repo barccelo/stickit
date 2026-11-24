@@ -35,10 +35,10 @@ internal object GifImportNormalizer {
     ) {
         val byteBuffer = ByteBuffer.wrap(input).asReadOnlyBuffer()
         val header = GifHeaderParser().setData(byteBuffer).parseHeader()
-        require(header.frameCount > 0) { "El GIF no contiene fotogramas válidos" }
+        require(header.numFrames > 0) { "El GIF no contiene fotogramas válidos" }
 
         val delaysCs = GifFrameTiming.delaysCentiseconds(input)
-        require(delaysCs.size == header.frameCount) {
+        require(delaysCs.size == header.numFrames) {
             "No se pudieron interpretar los tiempos del GIF"
         }
         val effectiveDelaysMs = delaysCs.map { it.coerceAtLeast(2) * 10 }
@@ -54,7 +54,7 @@ internal object GifImportNormalizer {
             var wrote = 0
             FileOutputStream(destination).use { stream ->
                 val writer = GifWriter(stream)
-                for (frameIndex in 0 until header.frameCount) {
+                for (frameIndex in 0 until header.numFrames) {
                     decoder.advance()
                     // Decoding every frame is required for disposal/composition,
                     // even if the frame is skipped by the target 25 FPS sampler.
