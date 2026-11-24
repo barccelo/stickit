@@ -225,43 +225,68 @@ object StickitPackImport {
     private val extensions = setOf("gif", "webp", "png", "jpeg", "jpg", "mp4", "webm")
 
     fun zip(context: Context, store: StickerStore, uri: Uri, pack: String): Report {
-        var added = 0
-        var skipped = 0
-        var count = 0
-        var overallBytes = 0L
-        context.contentResolver.openInputStream(uri).use { raw ->
-            requireNotNull(raw) { "No se pudo abrir el ZIP" }
-            ZipInputStream(raw.buffered()).use { zip ->
-                while (true) {
-                    val entry = zip.nextEntry ?: break
-                    count++
-                    require(count <= 500) { "El ZIP contiene demasiados archivos" }
-                    if (entry.isDirectory) { zip.closeEntry(); continue }
-                    val filename = entry.name.substringAfterLast('/').take(120)
-                    val ext = filename.substringAfterLast('.', "").lowercase()
-                    if (ext !in extensions) { skipped++; zip.closeEntry(); continue }
-                    val tmp = File(context.cacheDir, UUID.randomUUID().toString() + ".$ext")
-                    try {
-                        var size = 0L
-                        FileOutputStream(tmp).use { output ->
-                            val buffer = ByteArray(8192)
-                            while (true) {
-                                val n = zip.read(buffer)
-                                if (n < 0) break
-                                size += n; overallBytes += n
-                                require(size <= 20_000_000 && overallBytes <= 180_000_000) {
-                                    "El ZIP supera el tamaño permitido"
-                                }
-                                output.write(buffer, 0, n)
-                            }
-                        }
-                        try { importOne(context, store, tmp, filename.substringBeforeLast('.'), pack); added++ }
-                        catch (_: Exception) { skipped++ }
-                    } finally { tmp.delete(); zip.closeEntry() }
+        // Use random-access ZipFile. Skipped entries are never decompressed,
+        // preventing a large unsupported ZIP member from exhausting resources.
+        val archive = File(context.cacheDir, UUID.randomUUID().toString() + ".zip")
+        try {
+            context.contentResolver.openInputStream(uri).use { input ->
+                requireNotNull(input) { "No se pudo abrir el paquete" }
+                FileOutputStream(archive).use { output ->
+                    val buffer = ByteArray(8192)
+                    var compressedSize = 0L
+                    while (true) {
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        compressedSize += n
+                        require(compressedSize <= 100_000_000L) { "El ZIP es demasiado grande" }
+                        output.write(buffer, 0, n)
+                    }
                 }
             }
+            var added = 0
+            var skipped = 0
+            var total = 0L
+            java.util.zip.ZipFile(archive).use { zip ->
+                val entries = zip.entries().toList()
+                require(entries.size <= 500) { "El ZIP tiene demasiados archivos" }
+                for (entry in entries) {
+                    if (entry.isDirectory) continue
+                    val filename = entry.name.substringAfterLast('/').take(120)
+                    val extension = filename.substringAfterLast('.', "").lowercase()
+                    if (extension !in extensions) { skipped++; continue }
+                    if (entry.size > 20_000_000L) { skipped++; continue }
+                    val tmp = File(context.cacheDir,
+                        UUID.randomUUID().toString() + ".$"+"extension")
+                    try {
+                        zip.getInputStream(entry).use { input ->
+                            FileOutputStream(tmp).use { output ->
+                                var size = 0L
+                                val bytes = ByteArray(8192)
+                                while (true) {
+                                    val n = input.read(bytes)
+                                    if (n < 0) break
+                                    size += n
+                                    total += n
+                                    require(size <= 20_000_000L && total <= 180_000_000L) {
+                                        "El paquete supera el tamaño permitido"
+                                    }
+                                    output.write(bytes, 0, n)
+                                }
+                            }
+                        }
+                        try {
+                            importOne(context, store, tmp, filename.substringBeforeLast('.'), pack)
+                            added++
+                        } catch (_: Exception) { skipped++ }
+                    } finally {
+                        tmp.delete()
+                    }
+                }
+            }
+            return Report(added, skipped)
+        } finally {
+            archive.delete()
         }
-        return Report(added, skipped)
     }
 
     fun folder(context: Context, store: StickerStore, tree: Uri): Report {
@@ -277,7 +302,9 @@ object StickitPackImport {
                 if (child.isDirectory) { walk(child, depth + 1, child.name ?: pack); continue }
                 val filename = child.name ?: "Sticker"
                 val ext = filename.substringAfterLast('.', "").lowercase()
-                if (!child.isFile || ext !in extensions) { skipped++; continue }
+                if (!child.isFile || ext !in extensions || child.length() > 20_000_000L) {
+                    skipped++; continue
+                }
                 try {
                     val file = GifConverter.import(context, child.uri)
                     try { store.add(file, filename.substringBeforeLast('.').take(150), "", pack); added++ }
