@@ -56,7 +56,7 @@ class StickerStore(private val appContext: Context) :
             db.execSQL("INSERT INTO packs (name, position) VALUES ('General', 0)")
             val legacy = mutableListOf<String>()
             db.rawQuery(
-                "SELECT DISTINCT package_name FROM stickers ORDER BY MIN(created_at)",
+                "SELECT package_name FROM stickers GROUP BY package_name ORDER BY MIN(created_at)",
                 null
             ).use { cursor ->
                 while (cursor.moveToNext()) legacy.add(cursor.getString(0))
@@ -187,7 +187,7 @@ class StickerStore(private val appContext: Context) :
             put("name", name.ifBlank { "Sin título" })
             put("tags", sanitizeTags(tags))
             put("emojis", sanitizeEmojis(emojis))
-            put("package_name", pack.ifBlank { "General" }.trim())
+            put("package_name", safePack(pack))
             put("created_at", System.currentTimeMillis())
         }
         val db = writableDatabase
@@ -200,7 +200,7 @@ class StickerStore(private val appContext: Context) :
             put("name", name.trim().ifBlank { "Sin título" })
             put("tags", sanitizeTags(tags))
             put("emojis", sanitizeEmojis(emojis))
-            put("package_name", pack.trim().ifBlank { "General" })
+            put("package_name", safePack(pack))
         }
         val db = writableDatabase
         ensurePack(db, pack)
@@ -229,7 +229,7 @@ class StickerStore(private val appContext: Context) :
             ids.forEach { id ->
                 val sticker = all[id] ?: return@forEach
                 val values = ContentValues()
-                if (pack != null) values.put("package_name", pack.trim().ifBlank { "General" })
+                if (pack != null) values.put("package_name", safePack(pack))
                 if (favorite != null) values.put("favorite", if (favorite) 1 else 0)
                 if (normalizedTags.isNotEmpty()) {
                     val combined = (sticker.tagList() + normalizedTags).distinct()

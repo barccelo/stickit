@@ -12,6 +12,9 @@ android {
         applicationId = "com.barccelo.stickit"
         minSdk = 29
         targetSdk = 35
+        // The app is built for Galaxy S25 Ultra (64-bit ARM). This avoids
+        // bundling x86 and 32-bit WebP native libraries in the APK.
+        ndk { abiFilters += "arm64-v8a" }
         versionCode = 8
         versionName = "0.3.0"
     }
@@ -45,7 +48,12 @@ android {
             versionNameSuffix = "-debug"
         }
         getByName("release") {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             if (!keystore.isNullOrBlank()) signingConfig = signingConfigs.getByName("stickitRelease")
         }
     }
