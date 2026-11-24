@@ -50,6 +50,9 @@ object StickitBackup {
         manifest.put("format", "stickit-library")
         manifest.put("version", 1)
         manifest.put("createdAt", System.currentTimeMillis())
+        manifest.put("packs", JSONArray().also { array ->
+            store.packNames().forEach(array::put)
+        })
         // Preferences and shortcut phrases are included, but never the text
         // detected in third-party apps (which Stickit does not record).
         val preferences = JSONObject().apply {
@@ -57,6 +60,7 @@ object StickitBackup {
                 ShortcutSettings.phrases(context).forEach(values::put)
             })
             put("suggestions", ShortcutSettings.suggestionsEnabled(context))
+            put("themeMode", AppearanceSettings.mode(context))
             put("panelHeightDp", ShortcutSettings.panelHeightDp(context))
             put("suggestX", ShortcutSettings.suggestX(context))
             put("suggestY", ShortcutSettings.suggestY(context))
@@ -218,6 +222,12 @@ object StickitBackup {
                 existing.add(signature)
                 imported++
             }
+            index.optJSONArray("packs")?.let { names ->
+                val order = (0 until names.length().coerceAtMost(500)).map {
+                    names.optString(it)
+                }
+                store.reorderPacks(order)
+            }
             // Restore optional user configuration only after the library
             // has been processed without errors. Older ZIPs remain supported.
             index.optJSONObject("ui")?.let { ui ->
@@ -226,6 +236,8 @@ object StickitBackup {
                         .map { names.optString(it) }
                     ShortcutSettings.savePhrases(context, shortcuts)
                 }
+                if (ui.has("themeMode")) AppearanceSettings.save(
+                    context, ui.optInt("themeMode"))
                 if (ui.has("suggestions")) ShortcutSettings.setSuggestionsEnabled(
                     context, ui.optBoolean("suggestions"))
                 if (ui.has("panelHeightDp")) ShortcutSettings.setPanelHeightDp(

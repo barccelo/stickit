@@ -91,6 +91,27 @@ class StickerStore(private val appContext: Context) :
         return result
     }
 
+    fun reorderPacks(preferredOrder: List<String>) {
+        val known = packNames()
+        val normalized = preferredOrder.filter { requested ->
+            known.any { it.equals(requested, true) }
+        }.distinctBy { it.lowercase() }
+        val ordered = normalized.map { item ->
+            known.first { it.equals(item, true) }
+        } + known.filterNot { current ->
+            normalized.any { it.equals(current, true) }
+        }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            ordered.forEachIndexed { index, name ->
+                db.update("packs", ContentValues().apply { put("position", index) },
+                    "name=? COLLATE NOCASE", arrayOf(name))
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
     fun createPack(name: String) {
         val normalized = safePack(name)
         require(name.isNotBlank()) { "Escribe el nombre del paquete" }
