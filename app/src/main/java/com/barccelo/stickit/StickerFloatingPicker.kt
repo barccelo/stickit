@@ -128,18 +128,8 @@ class StickerFloatingPicker(
                 setOnClickListener { callback() }
             }, LinearLayout.LayoutParams(dp(42), dp(38)))
         }
-        action("⊕", "Crear sticker rápidamente") {
-            hidePicker()
-            try {
-                context.startActivity(Intent(context, MainActivity::class.java).apply {
-                    action = MainActivity.ACTION_QUICK_IMPORT
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                })
-            } catch (_: Exception) {
-                Toast.makeText(context, "No se pudo abrir la creación de stickers",
-                    Toast.LENGTH_SHORT).show()
-            }
-        }
+        var showQuickCreation: (() -> Unit)? = null
+        action("⊕", "Abrir opciones de creación") { showQuickCreation?.invoke() }
         action("×", "Cerrar selector") { hidePicker() }
         root.addView(header)
         var startY = 0f
@@ -206,9 +196,76 @@ class StickerFloatingPicker(
             addView(noResults, FrameLayout.LayoutParams(-1, -1))
         }
         root.addView(holder, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(label("Toca para copiar · después pega en WhatsApp", 11f,
-            muted).apply { gravity = Gravity.CENTER },
-            LinearLayout.LayoutParams(-1, dp(26)))
+        val footer = label("Toca para copiar · después pega en WhatsApp", 11f,
+            muted).apply { gravity = Gravity.CENTER }
+        root.addView(footer, LinearLayout.LayoutParams(-1, dp(26)))
+
+        // Keep the options within the overlay instead of opening Files
+        // immediately; clipboard access itself happens in the foreground app.
+        val createMenu = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(4), dp(7), dp(4), dp(7))
+            visibility = View.GONE
+        }
+        fun showLibrary(show: Boolean) {
+            createMenu.visibility = if (show) View.GONE else View.VISIBLE
+            val state = if (show) View.VISIBLE else View.GONE
+            search.visibility = state
+            filterScroll.visibility = state
+            holder.visibility = state
+            footer.visibility = state
+        }
+        showQuickCreation = { showLibrary(false) }
+        createMenu.addView(label("‹  Volver a mis stickers", 13f, accent).apply {
+            setPadding(dp(8), 0, 0, 0)
+            setOnClickListener { showLibrary(true) }
+        }, LinearLayout.LayoutParams(-1, dp(33)))
+        createMenu.addView(label("Crear sticker", 17f, ink).apply {
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(dp(8), 0, 0, 0)
+        }, LinearLayout.LayoutParams(-1, dp(35)))
+        fun quickAction(actionName: String) {
+            try {
+                context.startActivity(Intent(context, MainActivity::class.java).apply {
+                    action = actionName
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                })
+                hidePicker()
+            } catch (_: Exception) {
+                Toast.makeText(context, "No se pudo abrir el creador",
+                    Toast.LENGTH_SHORT).show()
+            }
+        }
+        fun option(symbol: String, title: String, description: String, actionName: String) {
+            val line = LinearLayout(context).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                orientation = LinearLayout.HORIZONTAL
+                background = shape(fieldBg, 14, edge)
+                setPadding(dp(12), dp(5), dp(12), dp(5))
+                contentDescription = title
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { quickAction(actionName) }
+            }
+            line.addView(label(symbol, 21f, accent).apply { gravity = Gravity.CENTER },
+                LinearLayout.LayoutParams(dp(43), -1))
+            line.addView(LinearLayout(context).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                orientation = LinearLayout.VERTICAL
+                addView(label(title, 14f, ink).apply {
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                })
+                addView(label(description, 11f, muted))
+            }, LinearLayout.LayoutParams(0, -1, 1f))
+            createMenu.addView(line, LinearLayout.LayoutParams(-1, dp(67)).apply {
+                bottomMargin = dp(9)
+            })
+        }
+        option("▣", "Pegar imagen copiada", "Desde el portapapeles",
+            MainActivity.ACTION_QUICK_PASTE)
+        option("▧", "Elegir imagen, GIF o vídeo", "Galería, archivos o descargas",
+            MainActivity.ACTION_QUICK_IMPORT)
+        root.addView(createMenu, 1, LinearLayout.LayoutParams(-1, 0, 1f))
 
         val packs = store.packNames()
         var activeFilter = "Todos"

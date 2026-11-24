@@ -31,6 +31,7 @@ private val StickitInk = Color(0xFF1D2233)
 class MainActivity : ComponentActivity() {
     companion object {
         const val ACTION_QUICK_IMPORT = "com.barccelo.stickit.QUICK_IMPORT"
+        const val ACTION_QUICK_PASTE = "com.barccelo.stickit.QUICK_PASTE"
     }
     private lateinit var store: StickerStore
     private val worker = Executors.newSingleThreadExecutor()
@@ -337,10 +338,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        if (intent?.action == ACTION_QUICK_IMPORT) {
-            window.decorView.post {
+        when (intent?.action) {
+            ACTION_QUICK_IMPORT -> window.decorView.post {
                 mediaPicker.launch(arrayOf("image/*", "video/*"))
             }
+            ACTION_QUICK_PASTE -> window.decorView.post { fromClipboard() }
         }
     }
 
@@ -356,9 +358,13 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.action == ACTION_QUICK_IMPORT) {
-            window.decorView.post { mediaPicker.launch(arrayOf("image/*", "video/*")) }
-        } else processShareIntent(intent)
+        when (intent.action) {
+            ACTION_QUICK_IMPORT -> window.decorView.post {
+                mediaPicker.launch(arrayOf("image/*", "video/*"))
+            }
+            ACTION_QUICK_PASTE -> window.decorView.post { fromClipboard() }
+            else -> processShareIntent(intent)
+        }
     }
 
     private fun processShareIntent(intent: Intent?) {
@@ -443,14 +449,27 @@ class MainActivity : ComponentActivity() {
 
     private fun fromClipboard() {
         try {
+            // Android restricts clipboard reads outside the foreground app.
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             val clip = clipboard.primaryClip
-            val data = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
-            val uri = data?.uri ?: data?.intent?.data
+            if (clip == null || clip.itemCount == 0) {
+                notify("El portapapeles está vacío. Copia primero una imagen.")
+                return
+            }
+            val uri = (0 until clip.itemCount).asSequence().mapNotNull { index ->
+                val item = clip.getItemAt(index)
+                val image = item.uri ?: item.intent?.data
+                image?.takeIf { candidate ->
+                    candidate.scheme in listOf("content", "file") && try {
+                        contentResolver.openInputStream(candidate).use { it?.read() != null }
+                    } catch (_: Exception) { false }
+                }
+            }.firstOrNull()
             if (uri != null) pendingImport = listOf(uri)
-            else notify("No hay una imagen accesible en el portapapeles. Utiliza Compartir.")
+            else notify("Has copiado un enlace o texto, no una imagen. " +
+                "Copia la imagen directamente o usa Compartir con Stickit.")
         } catch (e: Exception) {
-            notify("No se pudo abrir el portapapeles: ${e.message}")
+            notify("No se pudo leer la imagen copiada: ${e.message}")
         }
     }
 

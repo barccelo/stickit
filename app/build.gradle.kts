@@ -15,8 +15,8 @@ android {
         // The app is built for Galaxy S25 Ultra (64-bit ARM). This avoids
         // bundling x86 and 32-bit WebP native libraries in the APK.
         ndk { abiFilters += "arm64-v8a" }
-        versionCode = 9
-        versionName = "0.4.0"
+        versionCode = 10
+        versionName = "0.4.1"
     }
 
     buildFeatures { compose = true }

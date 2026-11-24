@@ -64,3 +64,7 @@ GitHub Actions compila el APK de desarrollo, ejecuta las pruebas del codificador
 ## Tamaño y compatibilidad
 
 La APK de Obtainium es una compilación de producción con R8 y eliminación de recursos no usados. A partir de 0.4.0 solo incluye librerías nativas de **ARM64**, compatibles con el Galaxy S25 Ultra; otras arquitecturas Android pueden no ser compatibles. Las versiones anteriores sin optimización siguen disponibles en GitHub Releases.
+
+## Creación desde el selector flotante
+
+El botón **⊕** ofrece dos opciones en el propio selector: **Pegar imagen copiada**, leyendo los datos de imagen del portapapeles cuando Stickit pasa a primer plano, o **Elegir imagen, GIF o vídeo**, para utilizar el explorador de Android. Ambas utilizan el formulario habitual de etiquetas, emojis y paquetes. Los enlaces de imagen copiados como texto no equivalen a datos de imagen: para esos sitios utiliza **Compartir con Stickit**.
