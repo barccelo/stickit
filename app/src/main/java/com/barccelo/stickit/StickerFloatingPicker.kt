@@ -229,7 +229,7 @@ class StickerFloatingPicker(
             addView(noResults, FrameLayout.LayoutParams(-1, -1))
         }
         root.addView(holder, LinearLayout.LayoutParams(-1, 0, 1f))
-        val footer = label("Toca para copiar · después pega en WhatsApp", 11f,
+        val footer = label("Toca para copiar · mantén pulsado para enviar GIF", 11f,
             muted).apply { gravity = Gravity.CENTER }
         root.addView(footer, LinearLayout.LayoutParams(-1, dp(26)))
 
@@ -265,7 +265,8 @@ class StickerFloatingPicker(
             try {
                 context.startActivity(Intent(context, MainActivity::class.java).apply {
                     action = actionName
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 })
                 hidePicker()
             } catch (_: Exception) {
@@ -336,6 +337,10 @@ class StickerFloatingPicker(
                     (drawable as? AnimatedImageDrawable)?.start()
                 } catch (_: Exception) { }
                 view.setOnClickListener { copyAndClose(sticker) }
+                view.setOnLongClickListener {
+                    shareAndClose(sticker)
+                    true
+                }
                 return view
             }
         }
@@ -456,6 +461,18 @@ class StickerFloatingPicker(
         } catch (_: Exception) { }
     }
 
+    private fun shareAndClose(sticker: Sticker) {
+        try {
+            ClipboardBridge.shareGif(context, store.stickerFile(sticker))
+            store.markUsed(sticker)
+            hidePicker()
+            hideSuggestions()
+        } catch (e: Exception) {
+            Toast.makeText(context, "No se pudo abrir el envío: ${e.message}",
+                Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun copyAndClose(sticker: Sticker, removeEmoji: (() -> Boolean)? = null) {
         try {
             val file = store.stickerFile(sticker)
@@ -560,6 +577,11 @@ class StickerFloatingPicker(
             val view = imageView(sticker)
             view.contentDescription = "Copiar sugerencia: ${sticker.name}"
             view.setOnClickListener { copyAndClose(sticker, removeEmoji) }
+            view.setOnLongClickListener {
+                // Sending through a chooser never edits the WhatsApp message.
+                shareAndClose(sticker)
+                true
+            }
             bar.addView(view, LinearLayout.LayoutParams(dp(50), dp(50)).apply {
                 setMargins(dp(3), 0, dp(3), 0)
             })

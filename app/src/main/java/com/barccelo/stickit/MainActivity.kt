@@ -409,6 +409,16 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }) else null,
+                        onSendGif = {
+                            editing = null
+                            try {
+                                ClipboardBridge.shareGif(this, gifFile)
+                                store.markUsed(current)
+                                refresh()
+                            } catch (error: Exception) {
+                                notify("No se pudo abrir el envío: ${error.message}")
+                            }
+                        },
                         onAddNativeWhatsApp = if (isWebpSource) ({
                             editing = null
                             var prepared: PreparedNativePack? = null

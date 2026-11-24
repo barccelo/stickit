@@ -4,6 +4,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
+import android.app.Activity
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import androidx.core.content.FileProvider
@@ -323,6 +325,28 @@ class StickerStore(private val appContext: Context) :
 }
 
 object ClipboardBridge {
+    /**
+     * Opens Android's share sheet, allowing selection of a WhatsApp chat.
+     * WhatsApp still requires the user to confirm sending; it is not a
+     * background/automatic message and may classify the media as a GIF.
+     */
+    fun shareGif(context: Context, file: File) {
+        require(file.isFile && file.extension.equals("gif", ignoreCase = true))
+        val uri = FileProvider.getUriForFile(
+            context, "${context.packageName}.fileprovider", file)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "image/gif"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = ClipData.newUri(context.contentResolver, "Stickit GIF", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val chooser = Intent.createChooser(send, "Enviar GIF con…").apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(chooser)
+    }
+
     fun copyGif(context: Context, file: File) {
         require(file.exists() && file.extension.equals("gif", ignoreCase = true))
         val uri = FileProvider.getUriForFile(

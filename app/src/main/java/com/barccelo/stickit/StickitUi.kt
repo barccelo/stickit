@@ -24,6 +24,9 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -785,6 +788,7 @@ private fun mergeCapsules(saved: String, draft: String): String =
 fun CapsuleEditor(title: String, tokens: String, onChange: (String) -> Unit,
     placeholder: String, draftState: MutableState<String>) {
     var draft by draftState
+    var emojiPickerOpen by remember { mutableStateOf(false) }
     val chips = tokens.split(",").map { it.trim() }.filter { it.isNotEmpty() }
     fun commit() {
         val additions = draft.split(",").map { it.trim() }
@@ -815,16 +819,73 @@ fun CapsuleEditor(title: String, tokens: String, onChange: (String) -> Unit,
             verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(value = draft, onValueChange = {
                 draft = it.take(90)
-                if (draft.endsWith(",")) commit()
+                if (draft.endsWith(",") || draft.endsWith("\n")) commit()
             },
                 placeholder = { Text(placeholder, fontSize = 11.sp) },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { commit() }),
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(13.dp))
+            if (title.contains("emoji", ignoreCase = true)) {
+                FilledTonalIconButton(onClick = { emojiPickerOpen = true }) {
+                    Text("☺", fontSize = 22.sp)
+                }
+            }
             FilledIconButton(onClick = { commit() }, enabled = draft.isNotBlank()) {
                 Icon(Icons.Outlined.Add, contentDescription = "Añadir $title")
             }
         }
+    }
+    if (emojiPickerOpen) {
+        val selections = remember { mutableStateListOf<String>() }
+        val emojiGroups = listOf(
+            "Caras" to "😀 😃 😄 😁 😆 😅 😂 🤣 🙂 🙃 😉 😊 😍 🥰 😘 😋 😜 🤔 🤨 😐 🙄 😴 😢 😭 😡 🤯".split(" "),
+            "Gestos" to "👍 👎 👏 🙌 🫶 🙏 🤝 👌 ✌️ 🤞 🤟 🤘 💪 👀 👋 🤦 🤷".split(" "),
+            "Amor y símbolos" to "❤️ 🧡 💛 💚 💙 💜 🖤 🤍 💔 💯 🔥 ✨ ⭐ 💥 💬 🎉 ✅ ❌ ❓".split(" "),
+            "Personas y objetos" to "👨 👩 👶 😎 🥳 🤡 👑 🐱 🐶 🐻 🐸 🍕 ☕ 🎁 🎂 🚀 🏆 ⚽ 🎮".split(" ")
+        )
+        AlertDialog(onDismissRequest = { emojiPickerOpen = false },
+            title = { Text("Seleccionar emojis") },
+            text = {
+                Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Selecciona uno o varios emojis para asociarlos al sticker.",
+                        fontSize = 12.sp, color = Secondary)
+                    emojiGroups.forEach { (heading, emojis) ->
+                        Text(heading, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            emojis.forEach { emoji ->
+                                val selected = emoji in selections
+                                Surface(
+                                    shape = RoundedCornerShape(11.dp),
+                                    color = if (selected) MaterialTheme.colorScheme.secondaryContainer
+                                        else MaterialTheme.colorScheme.surfaceVariant,
+                                    modifier = Modifier.size(42.dp).clickable {
+                                        if (selected) selections.remove(emoji)
+                                        else selections.add(emoji)
+                                    },
+                                    border = BorderStroke(1.dp, if (selected) Indigo else Stroke)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(emoji, fontSize = 23.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    onChange(mergeCapsules(tokens, selections.joinToString(",")))
+                    emojiPickerOpen = false
+                }, enabled = selections.isNotEmpty()) { Text("Añadir ${selections.size}") }
+            },
+            dismissButton = {
+                TextButton(onClick = { emojiPickerOpen = false }) { Text("Cancelar") }
+            })
     }
 }
 
@@ -836,7 +897,8 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
     onArtwork: () -> Unit, onReprocess: () -> Unit, onUndo: () -> Unit,
     onDelete: () -> Unit, onWebpProfile: ((Int) -> Unit)? = null,
     playbackInfo: String? = null,
-    onAddNativeWhatsApp: (() -> Unit)? = null
+    onAddNativeWhatsApp: (() -> Unit)? = null,
+    onSendGif: (() -> Unit)? = null
 ) {
     var name by remember(sticker.id) { mutableStateOf(sticker.name) }
     var tags by remember(sticker.id) { mutableStateOf(sticker.tags) }
@@ -866,6 +928,15 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
                         "Ej.: 😂, 😡, ❤️", emojiDraft)
                     OutlinedTextField(value = pack, onValueChange = { pack = it },
                         singleLine = true, label = { Text("Paquete") })
+                    if (onSendGif != null) {
+                        OutlinedButton(onClick = onSendGif,
+                            modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Outlined.Share, contentDescription = null,
+                                modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Enviar GIF a una conversación…")
+                        }
+                    }
                     OutlinedButton(onClick = onArtwork, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Outlined.AutoFixHigh, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp)); Text("Editar imagen y animación")
