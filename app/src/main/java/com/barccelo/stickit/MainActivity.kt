@@ -19,6 +19,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import java.io.File
 import java.util.concurrent.Executors
@@ -236,7 +237,7 @@ class MainActivity : ComponentActivity() {
                         title = { Text(progress.title) },
                         text = {
                             Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(
-                                androidx.compose.ui.unit.dp(12))) {
+                                12.dp)) {
                                 Text(progress.detail)
                                 val total = progress.total
                                 val completed = progress.completed
