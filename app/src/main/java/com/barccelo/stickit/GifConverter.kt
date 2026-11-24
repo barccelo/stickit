@@ -26,7 +26,30 @@ object GifConverter {
         try {
             val mime = context.contentResolver.getType(uri).orEmpty()
             val isGif = mime == "image/gif" || uri.toString().substringBefore('?').endsWith(".gif", true)
-            if (isGif) {
+            val isWebp = mime == "image/webp" || uri.toString().substringBefore('?').endsWith(".webp", true)
+            if (isWebp) {
+                val drawable = ImageDecoder.decodeDrawable(ImageDecoder.createSource(context.contentResolver, uri))
+                if (drawable is android.graphics.drawable.AnimatedImageDrawable) {
+                    WebPStickerImport.convert(context, uri, destination, ::squarePixels)
+                } else {
+                    imageToGif(context, uri, destination)
+                }
+                val original = File(folder, "${destination.nameWithoutExtension}.source.webp")
+                context.contentResolver.openInputStream(uri).use { input ->
+                    requireNotNull(input)
+                    FileOutputStream(original).use { output ->
+                        val buffer = ByteArray(8192)
+                        var count = 0L
+                        while (true) {
+                            val size = input.read(buffer)
+                            if (size < 0) break
+                            count += size
+                            require(count <= 20_000_000) { "WebP demasiado grande" }
+                            output.write(buffer, 0, size)
+                        }
+                    }
+                }
+            } else if (isGif) {
                 val original = context.contentResolver.openInputStream(uri).use { input ->
                     requireNotNull(input) { "No se pudo leer el GIF" }
                     val output = java.io.ByteArrayOutputStream()
@@ -61,6 +84,7 @@ object GifConverter {
         } catch (error: Exception) {
             destination.delete()
             File(folder, "${destination.nameWithoutExtension}.source.gif").delete()
+            File(folder, "${destination.nameWithoutExtension}.source.webp").delete()
             throw error
         }
     }
