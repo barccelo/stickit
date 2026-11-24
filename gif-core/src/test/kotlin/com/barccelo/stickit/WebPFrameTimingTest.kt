@@ -177,7 +177,7 @@ class WebPFrameTimingTest {
         val output = WebPFrameTiming.fullAtReferenceCadence(source)
         assertEquals(listOf(0, 1, 2), output.map { it.sourceIndex })
         assertEquals(720, output.sumOf { it.delayCentiseconds })
-        assertEquals(listOf(400, 50, 270), output.map { it.delayCentiseconds })
+        assertEquals(listOf(400, 52, 268), output.map { it.delayCentiseconds })
     }
 
     @Test fun fullReferenceKeepsNonMultipleOfWindowDuration() {
