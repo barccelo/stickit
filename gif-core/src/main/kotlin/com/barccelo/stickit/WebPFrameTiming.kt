@@ -1,67 +1,81 @@
 package com.barccelo.stickit
 
 /**
- * WhatsApp-friendly animated WebP -> GIF frame plan.
+ * Convert libwebp cumulative end timestamps to a GIF playback timeline.
  *
- * libwebp exposes the END timestamp of each input frame (not its start).
- * GIF players do not agree on very short delays (20 ms or less); some
- * substantially lengthen those frames. Instead of exporting 20 ms frames,
- * resample visual frames onto a 25 fps-equivalent output timeline, preserving
- * original wall-clock duration. For longer animations, lower output fps to
- * remain below the 350-frame memory and file-size bound.
+ * Stickit copies GIF files into WhatsApp, which can handle a long/heavy GIF
+ * differently from its native animated WebP stickers. Do not assume that
+ * 25 FPS and hundreds of unique GIF frames are safe for every recipient.
+ *
+ * The default profile caps the number of frames at 60 (the successful short
+ * export used this bound) while preserving the WHOLE animation duration.
+ * Higher-fidelity and short reference profiles are available for testing.
+ * No arbitrary playback-speed multiplier is applied.
  */
 object WebPFrameTiming {
     const val MAX_DURATION_MS = 30_000
     const val MAX_SOURCE_FRAMES = 5_000
-    private const val MAX_OUTPUT_FRAMES = 350
+    const val COMPAT_FRAME_CAP = 60
+    const val SMOOTH_FRAME_CAP = 350
+    const val SHORT_REFERENCE_MS = 2_400
     private const val MIN_SAFE_DELAY_CS = 4
 
     data class OutputFrame(val sourceIndex: Int, val delayCentiseconds: Int)
 
-    fun plan(frameEndTimesMs: List<Int>): List<OutputFrame> {
+    fun plan(
+        frameEndTimesMs: List<Int>,
+        maxOutputFrames: Int = COMPAT_FRAME_CAP,
+        maxDurationMs: Int = MAX_DURATION_MS
+    ): List<OutputFrame> {
         require(frameEndTimesMs.isNotEmpty()) { "El WebP no contiene fotogramas" }
         require(frameEndTimesMs.size <= MAX_SOURCE_FRAMES) {
             "La animación contiene demasiados fotogramas"
         }
+        require(maxOutputFrames in 1..SMOOTH_FRAME_CAP)
+        require(maxDurationMs in 40..MAX_DURATION_MS)
         var previous = 0
         frameEndTimesMs.forEach { end ->
             require(end >= previous) { "Los tiempos de los fotogramas están desordenados" }
             previous = end
         }
-
-        val duration = previous
-        require(duration > 0) { "La animación no tiene duración válida" }
-        require(duration <= MAX_DURATION_MS) {
+        require(previous > 0) { "La animación no tiene duración válida" }
+        require(previous <= MAX_DURATION_MS) {
             "La animación supera 30 segundos. No se recortará sin autorización."
         }
-
-        // GIF stores centiseconds. Round the WHOLE animation once, to avoid
-        // accumulating a rounding error at each individual input frame.
-        // Very short animations require a single safe frame.
+        val duration = minOf(previous, maxDurationMs)
+        // Round the full duration once; no per-frame rounding accumulation.
         val totalCs = ((duration.toLong() + 5L) / 10L).toInt()
             .coerceAtLeast(MIN_SAFE_DELAY_CS)
         val frameCount = (totalCs / MIN_SAFE_DELAY_CS)
-            .coerceIn(1, MAX_OUTPUT_FRAMES)
+            .coerceIn(1, maxOutputFrames)
 
-        val output = ArrayList<OutputFrame>(frameCount)
+        val plan = ArrayList<OutputFrame>(frameCount)
         var sourceIndex = 0
         for (i in 0 until frameCount) {
-            // Determine which input frame is visible at the corresponding
-            // original timeline time (left-inclusive, right-exclusive).
-            val inputTimeMs = (i.toLong() * duration / frameCount).toInt()
+            // Timestamp belongs to original source playback, not to the
+            // potentially shorter reference GIF's previous output frames.
+            val timeMs = (i.toLong() * duration / frameCount).toInt()
             while (sourceIndex < frameEndTimesMs.lastIndex &&
-                frameEndTimesMs[sourceIndex] <= inputTimeMs) {
-                sourceIndex++
-            }
+                frameEndTimesMs[sourceIndex] <= timeMs) sourceIndex++
+
             val startCs = (i.toLong() * totalCs / frameCount).toInt()
             val endCs = ((i + 1L) * totalCs / frameCount).toInt()
             val delay = endCs - startCs
-            require(delay >= MIN_SAFE_DELAY_CS) {
-                "La temporización del GIF no es compatible"
+            require(delay >= MIN_SAFE_DELAY_CS)
+            if (plan.lastOrNull()?.sourceIndex == sourceIndex) {
+                // A frame can appear several times when source FPS < output
+                // FPS. Encode it only once with combined delay; identical
+                // GIF frames waste bytes and WhatsApp decoder work.
+                val last = plan.last()
+                plan[plan.lastIndex] = last.copy(
+                    delayCentiseconds = last.delayCentiseconds + delay)
+            } else {
+                plan.add(OutputFrame(sourceIndex, delay))
             }
-            output.add(OutputFrame(sourceIndex, delay))
         }
-        check(output.sumOf { it.delayCentiseconds } == totalCs)
-        return output
+        check(plan.isNotEmpty())
+        check(plan.all { it.delayCentiseconds in MIN_SAFE_DELAY_CS..65535 })
+        check(plan.sumOf { it.delayCentiseconds } == totalCs)
+        return plan
     }
 }
