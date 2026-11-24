@@ -66,7 +66,9 @@ object WebPFrameTiming {
             } else result.add(OutputFrame(sourceIndex, 4))
         }
         check(result.sumOf { it.delayCentiseconds } == targetCount * 4)
-        check(result.first().sourceIndex == 0)
+        // A source shorter than 40 ms can contain several frames but only
+        // one safe GIF frame: keep the final pose instead of rejecting it.
+        check(result.first().sourceIndex in frameEndTimesMs.indices)
         check(result.last().sourceIndex == frameEndTimesMs.lastIndex)
         return result
     }

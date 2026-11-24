@@ -152,4 +152,12 @@ class WebPFrameTimingTest {
             GifFrameTiming.delaysCentiseconds(output.toByteArray()))
         assertEquals(109, frames.last().sourceIndex)
     }
+
+    @Test fun veryShortFastAnimationDoesNotFailOnSingleSafeFrame() {
+        val output = WebPFrameTiming.fullLengthAtReferenceCadence(
+            listOf(5, 10, 20))
+        assertEquals(1, output.size)
+        assertEquals(2, output.single().sourceIndex)
+        assertEquals(4, output.single().delayCentiseconds)
+    }
 }
