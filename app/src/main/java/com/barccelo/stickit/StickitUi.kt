@@ -131,6 +131,8 @@ private fun StickerTile(
 @Composable
 fun StickitHome(
     stickers: List<Sticker>,
+    sortOrder: Int,
+    onSortChange: (Int) -> Unit,
     packs: List<String>,
     onCreatePack: (String) -> Unit,
     onRenamePack: (String, String) -> Unit,
@@ -168,6 +170,7 @@ fun StickitHome(
     var tab by remember { mutableIntStateOf(0) }
     var search by remember { mutableStateOf("") }
     var activeFilter by remember { mutableStateOf("Todos") }
+    var sortMenu by remember { mutableStateOf(false) }
     var importMenu by remember { mutableStateOf(false) }
     val selected = remember { mutableStateListOf<Long>() }
     var bulkDialog by remember { mutableStateOf(false) }
@@ -177,7 +180,7 @@ fun StickitHome(
     var deletePack by remember { mutableStateOf<String?>(null) }
     val filters = listOf("Todos", "Recientes", "Favoritos") +
         packs.map { "Paquete: $it" }
-    val shown = remember(stickers, search, activeFilter) {
+    val shown = remember(stickers, search, activeFilter, sortOrder) {
         stickers.filter { it.matches(search) }.filter {
             when {
                 activeFilter == "Favoritos" -> it.favorite
@@ -186,8 +189,8 @@ fun StickitHome(
                 else -> true
             }
         }.let {
-            if (activeFilter == "Recientes") it.sortedByDescending { item -> item.lastUsed }
-            else it
+            if (activeFilter == "Recientes") StickerOrdering.sort(it, StickerOrdering.RECENT_USED)
+            else StickerOrdering.sort(it, sortOrder)
         }
     }
 
@@ -319,6 +322,32 @@ fun StickitHome(
                                 color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 15.sp,
                                 modifier = Modifier.weight(1f))
                             Text("${shown.size} stickers", color = Secondary, fontSize = 12.sp)
+                            Box {
+                                IconButton(onClick = { sortMenu = true },
+                                    modifier = Modifier.size(34.dp)) {
+                                    Icon(Icons.Outlined.Sort,
+                                        contentDescription = "Ordenar stickers", tint = Indigo,
+                                        modifier = Modifier.size(20.dp))
+                                }
+                                DropdownMenu(expanded = sortMenu,
+                                    onDismissRequest = { sortMenu = false }) {
+                                    StickerOrdering.options.forEachIndexed { index, label ->
+                                        DropdownMenuItem(
+                                            text = { Text(label) },
+                                            leadingIcon = {
+                                                if (sortOrder == index)
+                                                    Icon(Icons.Outlined.Check, null,
+                                                        tint = Indigo,
+                                                        modifier = Modifier.size(18.dp))
+                                            },
+                                            onClick = {
+                                                onSortChange(index)
+                                                sortMenu = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
                             if (selected.isNotEmpty()) {
                                 TextButton(onClick = {
                                     if (selected.size == shown.size) selected.clear()
@@ -860,13 +889,14 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
 
 @Composable
 fun ImportStickersDialog(count: Int, suggestedName: String,
-    onDismiss: () -> Unit, onImport: (String, String, String, String) -> Unit) {
+    onDismiss: () -> Unit, onImport: (String, String, String, String, Boolean) -> Unit) {
     var name by remember { mutableStateOf(suggestedName) }
     var tags by remember { mutableStateOf("") }
     var emojis by remember { mutableStateOf("") }
     val tagDraft = remember { mutableStateOf("") }
     val emojiDraft = remember { mutableStateOf("") }
     var pack by remember { mutableStateOf("General") }
+    var editAfterImport by remember(count) { mutableStateOf(count == 1) }
     AlertDialog(onDismissRequest = onDismiss,
         title = { Text(if (count == 1) "Guardar sticker" else "Importar $count stickers") },
         text = {
@@ -880,13 +910,25 @@ fun ImportStickersDialog(count: Int, suggestedName: String,
                     emojiDraft)
                 OutlinedTextField(pack, { pack = it },
                     label = { Text("Paquete") }, singleLine = true)
-                if (count > 1) Text("Se utilizará el nombre de cada archivo.",
+                if (count == 1) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = editAfterImport,
+                            onCheckedChange = { editAfterImport = it })
+                        Column {
+                            Text("Editar y recortar al guardar",
+                                color = Ink, fontWeight = FontWeight.Medium,
+                                fontSize = 13.sp)
+                            Text("Abrir el editor con recorte de esquinas y bordes",
+                                color = Secondary, fontSize = 11.sp)
+                        }
+                    }
+                } else Text("Se utilizará el nombre de cada archivo.",
                     color = Secondary, fontSize = 12.sp)
             }
         },
         confirmButton = { Button(onClick = {
             onImport(name, mergeCapsules(tags, tagDraft.value), pack,
-                mergeCapsules(emojis, emojiDraft.value))
+                mergeCapsules(emojis, emojiDraft.value), editAfterImport)
         }) { Text("Guardar") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
 }
@@ -897,61 +939,81 @@ fun StickerArtworkDialog(file: File, hasUndo: Boolean,
     onSave: (ArtworkEdits) -> Unit,
     onUndo: () -> Unit
 ) {
-    var caption by remember { mutableStateOf("") }
-    var zoom by remember { mutableFloatStateOf(1f) }
-    var rotation by remember { mutableIntStateOf(0) }
-    var mirror by remember { mutableStateOf(false) }
+    var caption by remember(file.path) { mutableStateOf("") }
+    var crop by remember(file.path) { mutableStateOf(StickerCropArea()) }
+    var rotation by remember(file.path) { mutableIntStateOf(0) }
+    var mirror by remember(file.path) { mutableStateOf(false) }
     AlertDialog(onDismissRequest = onDismiss,
-        title = { Text("Editar sticker") },
+        title = { Text("Recortar y editar sticker") },
         text = {
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
+            Column(Modifier.fillMaxWidth().heightIn(max = 550.dp)
+                .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.size(210.dp).clip(RoundedCornerShape(18.dp))
+                Text("Arrastra las esquinas o bordes para recortar. Mueve el área desde el centro.",
+                    color = Secondary, fontSize = 12.sp, lineHeight = 17.sp)
+                Box(Modifier.size(238.dp).clip(RoundedCornerShape(14.dp))
                     .background(Light), contentAlignment = Alignment.Center) {
                     StickerPreview(file,
                         Modifier.fillMaxSize().graphicsLayer {
-                            scaleX = zoom * (if (mirror) -1f else 1f)
-                            scaleY = zoom
+                            scaleX = if (mirror) -1f else 1f
                             rotationZ = rotation.toFloat()
                         })
-                    if (caption.isNotBlank()) {
-                        Text(caption, color = Color.White, fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp, maxLines = 3, textAlign = TextAlign.Center,
-                            modifier = Modifier.align(Alignment.BottomCenter)
-                                .padding(8.dp).background(Color(0xB0000000),
-                                    RoundedCornerShape(8.dp)).padding(8.dp))
-                    }
+                    AndroidView(
+                        factory = { ctx ->
+                            StickerCropView(ctx).apply {
+                                onCropChange = { crop = it }
+                            }
+                        },
+                        update = { it.setCrop(crop) },
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = { crop = StickerCropArea() },
+                        shape = RoundedCornerShape(13.dp)) {
+                        Icon(Icons.Outlined.CropFree, null, Modifier.size(17.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Restablecer", fontSize = 12.sp)
+                    }
                     OutlinedButton(onClick = { rotation = (rotation + 90) % 360 },
                         shape = RoundedCornerShape(13.dp)) {
-                        Icon(Icons.Outlined.RotateRight, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp)); Text("Girar")
+                        Icon(Icons.Outlined.RotateRight, null, Modifier.size(17.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Girar", fontSize = 12.sp)
                     }
                     OutlinedButton(onClick = { mirror = !mirror },
                         shape = RoundedCornerShape(13.dp)) {
-                        Icon(Icons.Outlined.Flip, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp)); Text("Espejo")
+                        Icon(Icons.Outlined.Flip, null, Modifier.size(17.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Espejo", fontSize = 12.sp)
                     }
                 }
-                Text("Recortar / ampliar · ${(zoom * 100).toInt()}%",
-                    color = Secondary, fontSize = 12.sp)
-                Slider(value = zoom, onValueChange = { zoom = it },
-                    valueRange = 1f..2.3f)
-                OutlinedTextField(value = caption, onValueChange = { caption = it.take(100) },
+                OutlinedTextField(value = caption,
+                    onValueChange = { caption = it.take(100) },
                     label = { Text("Añadir texto (opcional)") },
-                    maxLines = 2)
-                if (hasUndo) TextButton(onClick = onUndo) {
-                    Text("Restaurar versión anterior")
+                    maxLines = 2,
+                    shape = RoundedCornerShape(14.dp))
+                if (hasUndo) {
+                    TextButton(onClick = onUndo) {
+                        Text("Restaurar versión anterior")
+                    }
                 }
-                Text("La edición se aplicará a todos los fotogramas.",
-                    color = Secondary, fontSize = 11.sp)
+                Text("El recorte se aplicará a toda la animación sin cambiar sus tiempos.",
+                    color = Secondary, fontSize = 11.sp, lineHeight = 16.sp,
+                    textAlign = TextAlign.Center)
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(ArtworkEdits(caption, zoom, rotation, mirror)) }) {
-                Text("Guardar cambios")
-            }
+            Button(onClick = {
+                onSave(ArtworkEdits(
+                    caption = caption,
+                    rotate = rotation,
+                    mirror = mirror,
+                    crop = crop
+                ))
+            }) { Text("Guardar edición") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } })
 }
