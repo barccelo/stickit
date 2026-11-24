@@ -30,7 +30,7 @@ data class Sticker(
 }
 
 class StickerStore(private val appContext: Context) :
-    SQLiteOpenHelper(appContext, "stickit.db", null, 2) {
+    SQLiteOpenHelper(appContext, "stickit.db", null, 3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE stickers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,12 +44,121 @@ class StickerStore(private val appContext: Context) :
             favorite INTEGER NOT NULL DEFAULT 0,
             emojis TEXT NOT NULL DEFAULT ''
         )""")
+        createPackTable(db)
+        db.execSQL("INSERT INTO packs (name, position) VALUES ('General', 0)")
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE stickers ADD COLUMN emojis TEXT NOT NULL DEFAULT ''")
         }
+        if (oldVersion < 3) {
+            createPackTable(db)
+            db.execSQL("INSERT INTO packs (name, position) VALUES ('General', 0)")
+            val legacy = mutableListOf<String>()
+            db.rawQuery(
+                "SELECT DISTINCT package_name FROM stickers ORDER BY MIN(created_at)",
+                null
+            ).use { cursor ->
+                while (cursor.moveToNext()) legacy.add(cursor.getString(0))
+            }
+            legacy.forEach { ensurePack(db, it) }
+        }
     }
+
+    private fun createPackTable(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE IF NOT EXISTS packs (
+            name TEXT PRIMARY KEY COLLATE NOCASE,
+            position INTEGER NOT NULL
+        )""")
+    }
+
+    private fun safePack(name: String): String =
+        name.trim().take(120).ifBlank { "General" }
+
+    private fun ensurePack(db: SQLiteDatabase, raw: String) {
+        db.execSQL(
+            """INSERT OR IGNORE INTO packs (name, position)
+                VALUES (?, (SELECT COALESCE(MAX(position) + 1, 0) FROM packs))""",
+            arrayOf(safePack(raw))
+        )
+    }
+
+    fun packNames(): List<String> {
+        val result = mutableListOf<String>()
+        readableDatabase.rawQuery("SELECT name FROM packs ORDER BY position, name", null).use {
+            while (it.moveToNext()) result.add(it.getString(0))
+        }
+        return result
+    }
+
+    fun createPack(name: String) {
+        val normalized = safePack(name)
+        require(name.isNotBlank()) { "Escribe el nombre del paquete" }
+        val db = writableDatabase
+        require(db.insertWithOnConflict("packs", null, ContentValues().apply {
+            put("name", normalized)
+            put("position", (packNames().size))
+        }, SQLiteDatabase.CONFLICT_IGNORE) != -1L) {
+            "Ya existe un paquete con ese nombre"
+        }
+    }
+
+    fun renamePack(oldName: String, newName: String) {
+        val next = safePack(newName)
+        require(oldName != "General") { "General es el paquete predeterminado" }
+        require(newName.isNotBlank()) { "Escribe el nuevo nombre" }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            require(db.updateWithOnConflict("packs", ContentValues().apply {
+                put("name", next)
+            }, "name=? COLLATE NOCASE", arrayOf(oldName),
+                SQLiteDatabase.CONFLICT_ABORT) == 1) {
+                "No se encontró el paquete"
+            }
+            db.update("stickers", ContentValues().apply {
+                put("package_name", next)
+            }, "package_name=? COLLATE NOCASE", arrayOf(oldName))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    fun movePack(name: String, direction: Int) {
+        if (direction == 0) return
+        val names = packNames().toMutableList()
+        val index = names.indexOfFirst { it.equals(name, ignoreCase = true) }
+        val target = index + if (direction > 0) 1 else -1
+        if (index !in names.indices || target !in names.indices) return
+        java.util.Collections.swap(names, index, target)
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            names.forEachIndexed { i, pack ->
+                db.update("packs", ContentValues().apply { put("position", i) },
+                    "name=? COLLATE NOCASE", arrayOf(pack))
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    fun deletePack(name: String, deleteStickers: Boolean) {
+        require(!name.equals("General", true)) {
+            "El paquete predeterminado no se puede eliminar"
+        }
+        if (deleteStickers) {
+            removeMany(all().filter { it.pack.equals(name, true) }.map { it.id }.toSet())
+        }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            if (!deleteStickers) db.update("stickers", ContentValues().apply {
+                put("package_name", "General")
+            }, "package_name=? COLLATE NOCASE", arrayOf(name))
+            db.delete("packs", "name=? COLLATE NOCASE", arrayOf(name))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
 
     fun all(): List<Sticker> {
         val result = mutableListOf<Sticker>()
@@ -81,7 +190,9 @@ class StickerStore(private val appContext: Context) :
             put("package_name", pack.ifBlank { "General" }.trim())
             put("created_at", System.currentTimeMillis())
         }
-        return writableDatabase.insertOrThrow("stickers", null, row)
+        val db = writableDatabase
+        ensurePack(db, pack)
+        return db.insertOrThrow("stickers", null, row)
     }
 
     fun update(sticker: Sticker, name: String, tags: String, pack: String, emojis: String = sticker.emojis) {
@@ -91,7 +202,9 @@ class StickerStore(private val appContext: Context) :
             put("emojis", sanitizeEmojis(emojis))
             put("package_name", pack.trim().ifBlank { "General" })
         }
-        writableDatabase.update("stickers", values, "id=?", arrayOf(sticker.id.toString()))
+        val db = writableDatabase
+        ensurePack(db, pack)
+        db.update("stickers", values, "id=?", arrayOf(sticker.id.toString()))
     }
 
     fun setFavorite(id: Long, favorite: Boolean) {
@@ -109,6 +222,7 @@ class StickerStore(private val appContext: Context) :
         val db = writableDatabase
         val normalizedTags = addTags.orEmpty().split(",").map { it.trim().lowercase() }
             .filter { it.isNotBlank() }
+        if (pack != null) ensurePack(db, pack)
         db.beginTransaction()
         try {
             val all = all().associateBy { it.id }
