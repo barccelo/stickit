@@ -481,9 +481,9 @@ fun StickitHome(
                                 HorizontalDivider(color = Stroke)
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
-                                        Text("Sugerencias por emoji", color = Ink,
+                                        Text("Sugerencias por palabras y emojis", color = Ink,
                                             fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                                        Text("Barra arrastrable sobre el teclado",
+                                        Text("Coincidencia con nombres, etiquetas y emojis",
                                             color = Secondary, fontSize = 11.sp)
                                     }
                                     Switch(checked = emojiSuggestions, onCheckedChange = onToggleSuggestions)

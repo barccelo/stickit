@@ -101,16 +101,22 @@ class StickerShortcutService : AccessibilityService() {
         val catalog = store.all()
         val linked = catalog.asSequence().flatMap { it.emojiList().asSequence() }.distinct().toList()
         val emoji = InputTriggerMatcher.emoji(suffix, linked)
-        if (emoji == null) {
-            picker.hideSuggestions()
-            return
-        }
-        val suggestions = catalog.filter { emoji in it.emojiList() }
-            .sortedWith(compareByDescending<Sticker> { it.favorite }
-                .thenByDescending { it.lastUsed }
-                .thenByDescending { it.uses })
+        val word = if (emoji == null) InputTriggerMatcher.trailingWord(suffix) else null
+        val matches = when {
+            emoji != null -> catalog.filter { emoji in it.emojiList() }
+            word != null -> catalog.filter { sticker ->
+                sticker.tagList().any { it.startsWith(word, ignoreCase = true) } ||
+                    sticker.name.split(" ", "-", "_").any {
+                        it.startsWith(word, ignoreCase = true)
+                    }
+            }
+            else -> emptyList()
+        }.sortedWith(compareByDescending<Sticker> { it.favorite }
+            .thenByDescending { it.lastUsed }
+            .thenByDescending { it.uses })
             .take(5)
-        picker.showSuggestions(emoji, suggestions)
+        if (matches.isEmpty()) picker.hideSuggestions()
+        else picker.showSuggestions(emoji ?: word ?: "", matches)
     }
 
     override fun onInterrupt() {

@@ -18,6 +18,12 @@ object InputTriggerMatcher {
             }
     }
 
+    /** Word fragment for live name/tag suggestions, with a 3-letter minimum. */
+    fun trailingWord(text: String): String? {
+        val word = text.takeLast(40).takeLastWhile { it.isLetterOrDigit() }
+        return word.takeIf { it.length in 3..30 }
+    }
+
     fun emoji(text: String, associated: Collection<String>): String? {
         if (text.isEmpty()) return null
         val tail = text.takeLast(32)

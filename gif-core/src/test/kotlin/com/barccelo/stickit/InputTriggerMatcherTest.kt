@@ -25,6 +25,13 @@ class InputTriggerMatcherTest {
         assertEquals("😂", InputTriggerMatcher.emoji("jeje😂", entries))
     }
 
+    @Test fun wordFragmentsSuggestOnlyAfterThreeLetters() {
+        assertNull(InputTriggerMatcher.trailingWord("Ho"))
+        assertEquals("bravo", InputTriggerMatcher.trailingWord("qué bravo"))
+        assertEquals("aleg", InputTriggerMatcher.trailingWord("¡aleg"))
+        assertNull(InputTriggerMatcher.trailingWord("fin "))
+    }
+
     @Test fun ignoresNonMatchingTokens() {
         assertNull(InputTriggerMatcher.emoji("abc", listOf("😂")))
         assertNull(InputTriggerMatcher.shortcut("hello", listOf("stk")))
