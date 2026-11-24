@@ -93,3 +93,14 @@ No se modifica el conversor WebP/GIF que preserva la duración y velocidad de lo
 El conversor WebP ya no produce fotogramas con retardos de 20 ms que determinados reproductores de GIF pueden alargar artificialmente. Remuestrea la animación en intervalos de aproximadamente 40 ms (equivalentes a 25 FPS) o más, utilizando los tiempos acumulados originales para decidir qué fotograma mostrar. Mantiene la duración completa del sticker, con precisión de centésimas de segundo, y un límite máximo de 350 fotogramas de salida. Los fotogramas de origen de baja frecuencia se replican correctamente, evitando errores de importación.
 
 El editor de recorte no vuelve a codificar si se pulsa Guardar sin cambios. Al aplicar una edición real, los GIF antiguos con retardos demasiado cortos también se normalizan a tiempos de reproducción seguros conservando la duración. Para corregir un sticker WebP importado con versiones anteriores, abre **Editar sticker → Corregir animación WebP original** (requiere que Stickit conserve el original). Las pruebas automatizadas comprueban las duraciones, los retardos codificados y la repetición de fotogramas.
+
+## Stickit 0.5.2 — Comparación de reproducción real en WhatsApp
+
+Los GIF pegados en WhatsApp no son stickers nativos WebP. A raíz de las diferencias entre la reproducción local y WhatsApp, se reemplaza la hipótesis de ajustar FPS por una comparación controlada sobre **el mismo archivo WebP original**.
+
+- **Importación WebP nueva:** genera por defecto un GIF completo con un máximo de 60 fotogramas distintos; coalescea fotogramas repetidos y conserva la duración total del original, para reducir la carga del decodificador de GIF en WhatsApp.
+- **Editar sticker → Comparar modos de reproducción:** selecciona «Completo · WhatsApp (60 cuadros)», «Completo · mayor fluidez» o «Referencia corta · 2,4 s». Solo el último modo recorta la animación, deliberadamente, para reproducir el caso que funcionaba antes. Los otros dos conservan la duración completa.
+- **Datos comprobables:** el editor indica el número de cuadros, la duración y el peso del GIF guardado. Compara la reproducción del mismo sticker en WhatsApp tras cada modo; no se puede verificar desde pruebas locales cómo procesará GIFs el WhatsApp instalado en tu teléfono.
+- **Sin perder el original:** Stickit mantiene el `.source.webp` intacto; cada modo reconstruye el GIF de forma atómica. Si no conserva el archivo original (p. ej. respaldos antiguos), la opción no estará disponible.
+
+Las pruebas verifican duración completa, máximo de fotogramas, los tres perfiles, GIFs de fotogramas repetidos y demoras codificadas. No se considera resuelta la diferencia de reproducción en WhatsApp hasta probarla en un dispositivo; si solo la versión corta funciona, será necesario usar el formato nativo de stickers WebP en WhatsApp en vez del portapapeles GIF.
