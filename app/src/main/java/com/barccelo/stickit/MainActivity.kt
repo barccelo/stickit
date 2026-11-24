@@ -320,6 +320,19 @@ class MainActivity : ComponentActivity() {
                         File(gifFile.parentFile, "$base.source.webp").isFile
                     val isGifSource =
                         File(gifFile.parentFile, "$base.source.gif").isFile
+                    val gifPlaybackInfo = remember(gifFile.path, previewVersion) {
+                        try {
+                            val delays = GifFrameTiming.delaysCentiseconds(
+                                gifFile.readBytes())
+                            val durationCs = delays.sum()
+                            val kilobytes = gifFile.length() / 1024.0
+                            String.format(java.util.Locale.ROOT,
+                                "GIF guardado: %d cuadros · %.2f s · %.0f KB",
+                                delays.size, durationCs / 100.0, kilobytes)
+                        } catch (_: Exception) {
+                            "No se pudieron leer los datos de reproducción"
+                        }
+                    }
                     StickerMetadataDialog(
                         sticker = current,
                         canReprocess = isWebpSource || isGifSource,
@@ -327,6 +340,27 @@ class MainActivity : ComponentActivity() {
                             "Corregir animación WebP original"
                             else "Reprocesar GIF para WhatsApp",
                         canUndo = StickerArtworkEditor.canUndo(gifFile),
+                        playbackInfo = gifPlaybackInfo,
+                        onWebpProfile = if (isWebpSource) ({ selected: Int ->
+                            editing = null
+                            val profile = when (selected) {
+                                1 -> WebPPlaybackProfile.HIGH_FPS
+                                2 -> WebPPlaybackProfile.SHORT_REFERENCE
+                                else -> WebPPlaybackProfile.WHATSAPP_COMPAT
+                            }
+                            runTask {
+                                GifConverter.reprocessStoredWebp(this, gifFile,
+                                    profile)
+                                when (profile) {
+                                    WebPPlaybackProfile.WHATSAPP_COMPAT ->
+                                        "GIF completo en modo WhatsApp: máximo 60 cuadros."
+                                    WebPPlaybackProfile.HIGH_FPS ->
+                                        "GIF completo con máxima fluidez."
+                                    WebPPlaybackProfile.SHORT_REFERENCE ->
+                                        "GIF de referencia: solo los primeros 2,4 segundos."
+                                }
+                            }
+                        }) else null,
                         onDismiss = { editing = null },
                         onSave = { name, tags, pack, emojis ->
                             store.update(current, name, tags, pack, emojis)
