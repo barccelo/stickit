@@ -48,6 +48,7 @@ class StickerFloatingPicker(
     private var suggestionParams: WindowManager.LayoutParams? = null
     private var backDispatcher: android.window.OnBackInvokedDispatcher? = null
     private var backCallback: android.window.OnBackInvokedCallback? = null
+    private var sortPopupOpen = false
 
     val isOpen: Boolean get() = picker != null
 
@@ -95,7 +96,8 @@ class StickerFloatingPicker(
         if (picker != null) return
         val root = object : LinearLayout(context) {
             override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-                if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+                if (event.actionMasked == MotionEvent.ACTION_OUTSIDE &&
+                    !sortPopupOpen) {
                     hidePicker()
                     return true
                 }
@@ -113,7 +115,8 @@ class StickerFloatingPicker(
                 } else false
             }
             setOnTouchListener { _, event ->
-                if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+                if (event.actionMasked == MotionEvent.ACTION_OUTSIDE &&
+                    !sortPopupOpen) {
                     hidePicker()
                     true
                 } else false
@@ -373,6 +376,8 @@ class StickerFloatingPicker(
                 render()
                 true
             }
+            sortPopupOpen = true
+            popup.setOnDismissListener { sortPopupOpen = false }
             popup.show()
         }
         for (choice in choices) {
