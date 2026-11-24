@@ -1,0 +1,393 @@
+package com.barccelo.stickit
+
+import android.content.Context
+import android.graphics.Color
+import android.graphics.ImageDecoder
+import android.graphics.PixelFormat
+import android.graphics.drawable.AnimatedImageDrawable
+import android.graphics.drawable.GradientDrawable
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.GridLayout
+import android.widget.HorizontalScrollView
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
+import java.io.File
+import kotlin.math.roundToInt
+
+/**
+ * A keyboard-sized native picker shared by the floating bubble and the
+ * explicitly enabled accessibility shortcut. No keyboard replacement.
+ *
+ * A TYPE_ACCESSIBILITY_OVERLAY is used only by the system-enabled
+ * AccessibilityService; the regular floating bubble uses application overlay.
+ */
+class StickerFloatingPicker(
+    private val context: Context,
+    private val windowType: Int,
+    private val store: StickerStore = StickerStore(context)
+) {
+    private val windows = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+    private var picker: View? = null
+    private var pickerParams: WindowManager.LayoutParams? = null
+    private var suggestions: View? = null
+    private var suggestionSignature = ""
+    private var suggestionParams: WindowManager.LayoutParams? = null
+
+    val isOpen: Boolean get() = picker != null
+    private fun dp(value: Int) = (value * context.resources.displayMetrics.density).roundToInt()
+    private fun unDp(value: Int) = (value / context.resources.displayMetrics.density).roundToInt()
+
+    private fun shape(color: Int, radius: Int = 18, lineColor: Int? = null): GradientDrawable =
+        GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dp(radius).toFloat()
+            if (lineColor != null) setStroke(dp(1), lineColor)
+        }
+
+    private fun label(
+        value: String, size: Float = 14f, color: Int = Color.rgb(28, 34, 51)
+    ) = TextView(context).apply {
+        text = value
+        textSize = size
+        setTextColor(color)
+        gravity = Gravity.CENTER_VERTICAL
+        includeFontPadding = false
+    }
+
+    fun showPicker() {
+        hideSuggestions()
+        if (picker != null) return
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            background = shape(Color.rgb(250, 250, 253), 24, Color.rgb(220, 223, 236))
+            setPadding(dp(12), dp(6), dp(12), dp(10))
+            isFocusableInTouchMode = true
+        }
+        val height = ShortcutSettings.panelHeightDp(context)
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            dp(height),
+            windowType,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+        }
+
+        val header = LinearLayout(context).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val handle = label("━━━━", 16f, Color.rgb(145, 153, 183)).apply {
+            gravity = Gravity.CENTER
+            contentDescription = "Arrastrar hacia arriba o abajo para ajustar el tamaño"
+        }
+        header.addView(handle, LinearLayout.LayoutParams(dp(56), dp(38)))
+        header.addView(label("stickit", 17f).apply {
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }, LinearLayout.LayoutParams(0, dp(38), 1f))
+
+        fun resize(deltaDp: Int) {
+            val newSize = (unDp(params.height) + deltaDp).coerceIn(230, 540)
+            params.height = dp(newSize)
+            ShortcutSettings.setPanelHeightDp(context, newSize)
+            try { windows.updateViewLayout(root, params) } catch (_: Exception) {}
+        }
+        fun action(title: String, description: String, callback: () -> Unit) {
+            header.addView(label(title, 23f, Color.rgb(72, 85, 178)).apply {
+                gravity = Gravity.CENTER
+                contentDescription = description
+                setOnClickListener { callback() }
+            }, LinearLayout.LayoutParams(dp(40), dp(38)))
+        }
+        action("−", "Reducir altura") { resize(-50) }
+        action("+", "Ampliar altura") { resize(50) }
+        action("×", "Cerrar selector") { hidePicker() }
+        root.addView(header)
+        var startY = 0f
+        var startHeight = 0
+        handle.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    startY = event.rawY
+                    startHeight = unDp(params.height)
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val delta = unDp((startY - event.rawY).roundToInt())
+                    val newSize = (startHeight + delta).coerceIn(230, 540)
+                    params.height = dp(newSize)
+                    try { windows.updateViewLayout(root, params) } catch (_: Exception) {}
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    ShortcutSettings.setPanelHeightDp(context, unDp(params.height))
+                    true
+                }
+                else -> false
+            }
+        }
+
+        val search = EditText(context).apply {
+            hint = "Buscar por nombre, etiqueta, emoji o paquete"
+            textSize = 14f
+            setSingleLine(true)
+            setTextColor(Color.rgb(29, 34, 51))
+            setHintTextColor(Color.rgb(137, 142, 161))
+            setPadding(dp(14), 0, dp(14), 0)
+            background = shape(Color.WHITE, 13, Color.rgb(228, 230, 239))
+            contentDescription = "Buscar stickers"
+        }
+        root.addView(search, LinearLayout.LayoutParams(-1, dp(45)))
+        val filters = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(7), 0, dp(7))
+        }
+        val filterScroll = HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(filters)
+        }
+        root.addView(filterScroll, LinearLayout.LayoutParams(-1, dp(45)))
+        val grid = GridLayout(context).apply {
+            columnCount = 4
+            setPadding(dp(1), dp(3), dp(1), dp(4))
+        }
+        val scroll = ScrollView(context).apply {
+            isFillViewport = false
+            addView(grid)
+        }
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(label("Toca para copiar · después pega en WhatsApp", 11f,
+            Color.rgb(121, 129, 146)).apply { gravity = Gravity.CENTER },
+            LinearLayout.LayoutParams(-1, dp(26)))
+
+        val packs = store.all().map(Sticker::pack).distinct().sorted()
+        var activeFilter = "Todos"
+        val choices = listOf("Todos", "Favoritos") + packs.map { "Paquete: $it" }
+        fun render() {
+            val query = search.text.toString().trim()
+            grid.removeAllViews()
+            val items = store.all().asSequence()
+                .filter { it.matches(query) }
+                .filter {
+                    when {
+                        activeFilter == "Favoritos" -> it.favorite
+                        activeFilter.startsWith("Paquete: ") ->
+                            it.pack == activeFilter.removePrefix("Paquete: ")
+                        else -> true
+                    }
+                }
+                .sortedWith(compareByDescending<Sticker> { it.favorite }
+                    .thenByDescending { it.lastUsed })
+                .take(160).toList()
+            val side = ((context.resources.displayMetrics.widthPixels - dp(36)) / 4)
+                .coerceAtLeast(dp(54))
+            for (sticker in items) {
+                val image = imageView(sticker)
+                image.contentDescription = "Copiar ${sticker.name}"
+                image.setOnClickListener { copyAndClose(sticker) }
+                grid.addView(image, GridLayout.LayoutParams().apply {
+                    width = side; height = side
+                    setMargins(dp(2), dp(2), dp(2), dp(2))
+                })
+            }
+            if (items.isEmpty()) {
+                grid.addView(label("No hay stickers para esta búsqueda", 14f,
+                    Color.rgb(127, 135, 153)).apply {
+                    gravity = Gravity.CENTER
+                    setPadding(dp(12), dp(20), dp(12), dp(20))
+                })
+            }
+        }
+        for (choice in choices) {
+            filters.addView(label(if (choice.startsWith("Paquete: ")) choice.removePrefix("Paquete: ")
+                else choice, 12f, if (choice == activeFilter) Color.WHITE
+                else Color.rgb(72, 85, 178)).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(12), 0, dp(12), 0)
+                background = shape(if (choice == activeFilter) Color.rgb(72, 85, 178)
+                    else Color.rgb(236, 238, 249), 14)
+                setOnClickListener {
+                    activeFilter = choice
+                    filters.children().forEachIndexed { index, view ->
+                        view.background = shape(
+                            if (choices[index] == choice) Color.rgb(72, 85, 178)
+                            else Color.rgb(236, 238, 249), 14)
+                        (view as TextView).setTextColor(
+                            if (choices[index] == choice) Color.WHITE
+                            else Color.rgb(72, 85, 178))
+                    }
+                    render()
+                }
+            }, LinearLayout.LayoutParams(-2, dp(32)).apply {
+                setMargins(0, 0, dp(6), 0)
+            })
+        }
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                render()
+            }
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
+        render()
+        try {
+            windows.addView(root, params)
+            picker = root
+            pickerParams = params
+            root.requestFocus()
+        } catch (_: Exception) {
+            Toast.makeText(context, "No se pudo abrir el selector", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun LinearLayout.children(): List<View> =
+        (0 until childCount).map { getChildAt(it) }
+
+    private fun imageView(sticker: Sticker): ImageView = ImageView(context).apply {
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        setPadding(dp(5), dp(5), dp(5), dp(5))
+        background = shape(Color.rgb(241, 242, 248), 12)
+        try {
+            val drawable = ImageDecoder.decodeDrawable(
+                ImageDecoder.createSource(store.stickerFile(sticker))
+            )
+            setImageDrawable(drawable)
+            (drawable as? AnimatedImageDrawable)?.start()
+        } catch (_: Exception) { }
+    }
+
+    private fun copyAndClose(sticker: Sticker) {
+        try {
+            val file = store.stickerFile(sticker)
+            ClipboardBridge.copyGif(context, file)
+            store.markUsed(sticker)
+            hidePicker()
+            hideSuggestions()
+            Toast.makeText(context, "Sticker copiado · pégalo en WhatsApp",
+                Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(context, "No se pudo copiar: ${e.message}",
+                Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun hidePicker() {
+        picker?.let { try { windows.removeView(it) } catch (_: Exception) {} }
+        picker = null
+        pickerParams = null
+    }
+
+    /**
+     * Compact draggable suggestion strip. Its position, including vertical
+     * offset above the keyboard, is saved per device, never per conversation.
+     */
+    fun showSuggestions(matchedEmoji: String, stickers: List<Sticker>) {
+        if (isOpen || stickers.isEmpty()) {
+            hideSuggestions()
+            return
+        }
+        val latest = matchedEmoji + ":" + stickers.take(5).joinToString { it.id.toString() }
+        if (suggestions != null && latest == suggestionSignature) return
+        hideSuggestions()
+        val bar = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(7), dp(6), dp(7), dp(6))
+            background = shape(Color.rgb(251, 251, 254), 19, Color.rgb(223, 226, 239))
+            elevation = dp(4).toFloat()
+        }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            dp(64),
+            windowType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.START
+            x = dp(ShortcutSettings.suggestX(context))
+            y = dp(ShortcutSettings.suggestY(context))
+        }
+        val grab = label("⋮⋮", 18f, Color.rgb(139, 149, 181)).apply {
+            gravity = Gravity.CENTER
+            contentDescription = "Mover sugerencias de stickers"
+        }
+        bar.addView(grab, LinearLayout.LayoutParams(dp(22), -1))
+        var xStart = 0f
+        var yStart = 0f
+        var originX = 0
+        var originY = 0
+        grab.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    xStart = event.rawX; yStart = event.rawY
+                    originX = params.x; originY = params.y
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val available = context.resources.displayMetrics.widthPixels
+                    params.x = (originX + (event.rawX - xStart).roundToInt())
+                        .coerceIn(0, (available - dp(100)).coerceAtLeast(0))
+                    params.y = (originY - (event.rawY - yStart).roundToInt())
+                        .coerceIn(0, context.resources.displayMetrics.heightPixels - dp(80))
+                    try { windows.updateViewLayout(bar, params) } catch (_: Exception) {}
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    ShortcutSettings.saveSuggestionPosition(
+                        context, unDp(params.x), unDp(params.y))
+                    true
+                }
+                else -> false
+            }
+        }
+        stickers.take(5).forEach { sticker ->
+            val view = imageView(sticker)
+            view.contentDescription = "Copiar sugerencia: ${sticker.name}"
+            view.setOnClickListener { copyAndClose(sticker) }
+            bar.addView(view, LinearLayout.LayoutParams(dp(50), dp(50)).apply {
+                setMargins(dp(3), 0, dp(3), 0)
+            })
+        }
+        val close = label("×", 22f, Color.rgb(132, 139, 159)).apply {
+            gravity = Gravity.CENTER
+            contentDescription = "Cerrar sugerencias"
+            setOnClickListener { hideSuggestions() }
+        }
+        bar.addView(close, LinearLayout.LayoutParams(dp(28), -1))
+        try {
+            windows.addView(bar, params)
+            suggestions = bar
+            suggestionParams = params
+            suggestionSignature = latest
+        } catch (_: Exception) {
+            suggestionSignature = ""
+        }
+    }
+
+    fun hideSuggestions() {
+        suggestions?.let { try { windows.removeView(it) } catch (_: Exception) {} }
+        suggestions = null
+        suggestionParams = null
+        suggestionSignature = ""
+    }
+
+    fun dismiss() {
+        hidePicker()
+        hideSuggestions()
+    }
+}
