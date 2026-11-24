@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
     private var editing by mutableStateOf<Sticker?>(null)
     private var entries by mutableStateOf<List<Sticker>>(emptyList())
     private var busy by mutableStateOf(false)
+    private var previewVersion by mutableIntStateOf(0)
     private var overlayActive by mutableStateOf(false)
     private var notice by mutableStateOf<String?>(null)
 
@@ -144,6 +145,27 @@ class MainActivity : ComponentActivity() {
                 runOnUiThread { busy = false; refresh(); notify("GIF guardado en Stickit") }
             } catch (error: Exception) {
                 runOnUiThread { busy = false; notify("Error al convertir: ${error.message}") }
+            }
+        }
+    }
+
+    private fun reprocessGif(sticker: Sticker) {
+        editing = null
+        busy = true
+        worker.execute {
+            try {
+                GifConverter.reprocessStoredGif(store.stickerFile(sticker))
+                runOnUiThread {
+                    busy = false
+                    previewVersion++
+                    refresh()
+                    notify("GIF actualizado. Cópialo nuevamente y pruébalo en WhatsApp.")
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    busy = false
+                    notify("No se pudo reprocesar: ${error.message}")
+                }
             }
         }
     }
@@ -336,7 +358,7 @@ class MainActivity : ComponentActivity() {
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(visible, key = { it.id }) { sticker ->
+                    items(visible, key = { "${it.id}:$previewVersion" }) { sticker ->
                         StickerCard(sticker,
                             file = store.stickerFile(sticker),
                             onCopy = { copy(sticker) },
@@ -383,7 +405,10 @@ class MainActivity : ComponentActivity() {
                     onName = { name = it }, onTags = { tags = it }, onPack = { pack = it },
                     onDismiss = { editing = null },
                     onSave = { store.update(current, name, tags, pack); editing = null; refresh() },
-                    onDelete = { confirmDelete = true }
+                    onDelete = { confirmDelete = true },
+                    onReprocess = if (File(store.stickerFile(current).parentFile,
+                        "${File(current.fileName).nameWithoutExtension}.source.gif").isFile)
+                        ({ reprocessGif(current) }) else null
                 )
             }
         }
@@ -394,7 +419,9 @@ class MainActivity : ComponentActivity() {
 private fun StickerEditor(
     title: String, name: String, tags: String, pack: String,
     onName: (String) -> Unit, onTags: (String) -> Unit, onPack: (String) -> Unit,
-    onDismiss: () -> Unit, onSave: () -> Unit, onDelete: (() -> Unit)? = null
+    onDismiss: () -> Unit, onSave: () -> Unit,
+    onDelete: (() -> Unit)? = null,
+    onReprocess: (() -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -408,6 +435,9 @@ private fun StickerEditor(
                 OutlinedTextField(pack, onPack, label = { Text("Paquete") }, singleLine = true)
                 Text("Al guardar se prepara un GIF para copiar a WhatsApp.",
                     style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                if (onReprocess != null) TextButton(onClick = onReprocess) {
+                    Text("Reprocesar GIF para WhatsApp")
+                }
                 if (onDelete != null) TextButton(onClick = onDelete) { Text("Eliminar sticker") }
             }
         },

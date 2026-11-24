@@ -65,6 +65,39 @@ object GifConverter {
         }
     }
 
+    /**
+     * Rebuild a previously imported animated GIF from the retained original.
+     * The database row and tags are preserved. The replacement is atomic:
+     * a failed conversion leaves the existing sticker untouched.
+     */
+    fun reprocessStoredGif(file: File) {
+        val backup = File(file.parentFile,
+            "${file.nameWithoutExtension}.source.gif")
+        require(backup.isFile) { "No se conserva el GIF original. Vuelve a importarlo." }
+        val temporary = File(file.parentFile,
+            "${file.nameWithoutExtension}.pending.gif")
+        try {
+            val bytes = backup.readBytes()
+            require(bytes.size <= 20_000_000) { "El GIF original es demasiado grande" }
+            GifImportNormalizer.normalize(bytes, temporary, ::squarePixels)
+            validate(temporary)
+            try {
+                java.nio.file.Files.move(
+                    temporary.toPath(), file.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE
+                )
+            } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+                java.nio.file.Files.move(
+                    temporary.toPath(), file.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                )
+            }
+        } finally {
+            temporary.delete()
+        }
+    }
+
     private fun squarePixels(bitmap: Bitmap, size: Int = 256): IntArray {
         val square = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(square)
