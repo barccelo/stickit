@@ -10,8 +10,10 @@ import java.nio.ByteBuffer
 
 /**
  * Normalize source GIF playback before sharing through WhatsApp's GIF paste
- * workflow. Source frame timing is read from actual GIF blocks, instead of
- * Glide's browser-compatible 100ms fallback for 0/10ms frames.
+ * workflow. We deliberately use the same 25 fps, 2.4 s timeline as the
+ * successful video import path, without lossy GIF -> MP4 -> GIF conversion.
+ * Source frames are selected using their raw GIF timing; exported frames
+ * always receive safe 40 ms delays (or appropriately rounded equivalents).
  */
 internal object GifImportNormalizer {
     private class BitmapProvider : GifDecoder.BitmapProvider {
@@ -41,45 +43,39 @@ internal object GifImportNormalizer {
         require(delaysCs.size == header.numFrames) {
             "No se pudieron interpretar los tiempos del GIF"
         }
-        val effectiveDelaysMs = delaysCs.map { it.coerceAtLeast(2) * 10 }
-        val duration = GifFrameTiming.effectiveDurationMs(delaysCs)
-        require(duration <= 10000) {
-            "El GIF dura más de 10 segundos. Recórtalo antes de importarlo como sticker."
-        }
-        val samples = GifFrameTiming.samples(duration)
+        // Use the identical sample cadence and clip length as MP4 -> GIF.
+        // Distinct source GIF delays are only used to locate the source image;
+        // they are NEVER reused for output playback durations.
+        val timeline = GifFrameTiming.videoCompatibleTimeline(delaysCs)
+        val sourceIndices = GifFrameTiming.sourceIndicesFor(delaysCs, timeline)
         val decoder = StandardGifDecoder(BitmapProvider(), header, ByteBuffer.wrap(input))
         try {
-            var sourceStart = 0
             var sampleCursor = 0
-            var wrote = 0
             FileOutputStream(destination).use { stream ->
                 val writer = GifWriter(stream)
-                for (frameIndex in 0 until header.numFrames) {
+                for (frameIndex in 0..sourceIndices.last()) {
                     decoder.advance()
-                    // Decoding every frame is required for disposal/composition,
-                    // even if the frame is skipped by the target 25 FPS sampler.
+                    // Decode intermediate source frames too, because disposal
+                    // and partial-frame overlays depend on previous frames.
                     val bitmap = decoder.nextFrame
                         ?: throw IllegalArgumentException("No se pudo decodificar un fotograma del GIF")
                     try {
-                        val end = sourceStart + effectiveDelaysMs[frameIndex]
-                        var first = sampleCursor
-                        while (sampleCursor < samples.size && samples[sampleCursor].timeMs < end) {
-                            sampleCursor++
-                        }
-                        if (sampleCursor > first) {
+                        if (sampleCursor < sourceIndices.size &&
+                            sourceIndices[sampleCursor] == frameIndex) {
                             val pixels = squarePixels(bitmap)
-                            while (first < sampleCursor) {
-                                writer.frame(pixels, samples[first].delayCentiseconds)
-                                wrote++
-                                first++
+                            while (sampleCursor < sourceIndices.size &&
+                                sourceIndices[sampleCursor] == frameIndex) {
+                                writer.frame(pixels, timeline[sampleCursor].delayCentiseconds)
+                                sampleCursor++
                             }
                         }
-                        sourceStart = end
                     } finally {
                         bitmap.recycle()
                     }
                 }
-                require(wrote == samples.size) { "No se generaron todos los fotogramas del GIF" }
+                require(sampleCursor == timeline.size) {
+                    "No se generaron todos los fotogramas del GIF"
+                }
                 writer.finish()
             }
         } finally {

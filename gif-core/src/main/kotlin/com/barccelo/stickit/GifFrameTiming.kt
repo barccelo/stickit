@@ -59,10 +59,53 @@ object GifFrameTiming {
         return delays
     }
 
-    /** Whichever app consumes the exported GIF must not clamp short frames. */
+    /**
+     * Interpret source timing, not output timing. A 1-centisecond source frame
+     * represents 10 ms, even if a different GIF viewer later clamps playback
+     * to 20 or 100 ms. Our previous 2-centisecond source clamp stretched some
+     * animations to twice their intended duration.
+     *
+     * For missing/zero delays, assume the shortest meaningful source interval
+     * (10 ms) rather than inserting a 100 ms pause on every frame.
+     */
+    fun sourceDelayMs(rawCentisecond: Int): Int =
+        rawCentisecond.coerceAtLeast(1) * 10
+
     fun effectiveDurationMs(rawCentiseconds: List<Int>): Int =
-        rawCentiseconds.fold(0L) { total, cs -> total + cs.coerceAtLeast(2) * 10L }
+        rawCentiseconds.fold(0L) { total, cs -> total + sourceDelayMs(cs).toLong() }
             .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+
+    /**
+     * Match the path that is already successful for MP4:
+     * first 2.4 seconds, 25 fps, and >= 20 ms per encoded GIF frame.
+     * No intermediate H.264 encoding (which would lose additional detail).
+     */
+    fun videoCompatibleTimeline(rawCentiseconds: List<Int>): List<GifTimeline.Frame> {
+        require(rawCentiseconds.isNotEmpty()) { "Missing GIF frames" }
+        val duration = effectiveDurationMs(rawCentiseconds).coerceIn(20, 2400)
+        return GifTimeline.samples(duration.toLong(), 25.0)
+    }
+
+    /**
+     * Select each source frame at the same timestamps the video converter
+     * samples, rather than copying or stretching the original frame delays.
+     */
+    fun sourceIndicesFor(
+        rawCentiseconds: List<Int>,
+        timeline: List<GifTimeline.Frame>
+    ): IntArray {
+        require(rawCentiseconds.isNotEmpty())
+        var frameIndex = 0
+        var endsAtMs = sourceDelayMs(rawCentiseconds[0]).toLong()
+        return IntArray(timeline.size) { i ->
+            val targetMs = timeline[i].presentationTimeUs / 1000
+            while (frameIndex < rawCentiseconds.lastIndex && targetMs >= endsAtMs) {
+                frameIndex++
+                endsAtMs += sourceDelayMs(rawCentiseconds[frameIndex])
+            }
+            frameIndex
+        }
+    }
 
     data class Sample(val timeMs: Int, val delayCentiseconds: Int)
 

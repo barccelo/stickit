@@ -36,7 +36,47 @@ class GifFrameTimingTest {
         }
         assertEquals(3, patched)
         assertEquals(listOf(1, 1, 1), GifFrameTiming.delaysCentiseconds(bytes))
-        assertEquals(60, GifFrameTiming.effectiveDurationMs(listOf(1, 1, 1)))
+        assertEquals(30, GifFrameTiming.effectiveDurationMs(listOf(1, 1, 1)))
+    }
+
+    @Test fun shortSourceFramesAreNeverStretchedToTwentyMilliseconds() {
+        assertEquals(10, GifFrameTiming.sourceDelayMs(0))
+        assertEquals(10, GifFrameTiming.sourceDelayMs(1))
+        assertEquals(20, GifFrameTiming.sourceDelayMs(2))
+        assertEquals(600, GifFrameTiming.effectiveDurationMs(List(60) { 1 }))
+    }
+
+    @Test fun fastSourceGifTakesSameTwentyFiveFpsVideoPath() {
+        // A one-second GIF with 100 frames of 10 ms each used to become two
+        // seconds when every short source frame was clamped to 20 ms.
+        val raw = List(100) { 1 }
+        val samples = GifFrameTiming.videoCompatibleTimeline(raw)
+        val indices = GifFrameTiming.sourceIndicesFor(raw, samples)
+        assertEquals(25, samples.size)
+        assertEquals(100, samples.sumOf { it.delayCentiseconds })
+        assertTrue(samples.all { it.delayCentiseconds == 4 })
+        assertEquals(0, indices.first())
+        assertEquals(96, indices.last())
+        assertTrue(indices.zipWithNext().all { (a, b) -> b > a })
+    }
+
+    @Test fun longerGifFollowsTheSameClipLimitAsVideo() {
+        val raw = List(600) { 1 }
+        val frames = GifFrameTiming.videoCompatibleTimeline(raw)
+        assertEquals(60, frames.size)
+        assertEquals(240, frames.sumOf { it.delayCentiseconds })
+        val source = GifFrameTiming.sourceIndicesFor(raw, frames)
+        assertEquals(236, source.last())
+    }
+
+    @Test fun mixedFrameDelaysKeepSourceFrameOrdering() {
+        val raw = listOf(1, 1, 20, 1, 20)
+        val frames = GifFrameTiming.videoCompatibleTimeline(raw)
+        val indices = GifFrameTiming.sourceIndicesFor(raw, frames)
+        assertEquals(GifFrameTiming.effectiveDurationMs(raw) / 10,
+            frames.sumOf { it.delayCentiseconds })
+        assertTrue(indices.zipWithNext().all { (a, b) -> a <= b })
+        assertTrue(indices.all { it in raw.indices })
     }
 
     @Test fun normalizationPreservesTimelineAndSafeDelays() {
