@@ -161,15 +161,26 @@ class StickerFloatingPicker(
             addView(filters)
         }
         root.addView(filterScroll, LinearLayout.LayoutParams(-1, dp(45)))
-        val grid = GridLayout(context).apply {
-            columnCount = 4
-            setPadding(dp(1), dp(3), dp(1), dp(4))
+        val grid = android.widget.GridView(context).apply {
+            numColumns = 4
+            verticalSpacing = dp(6)
+            horizontalSpacing = dp(6)
+            setPadding(dp(2), dp(4), dp(2), dp(4))
+            clipToPadding = false
+            isVerticalScrollBarEnabled = false
+            selector = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+            stretchMode = android.widget.GridView.STRETCH_COLUMN_WIDTH
         }
-        val scroll = ScrollView(context).apply {
-            isFillViewport = false
-            addView(grid)
+        val noResults = label("No hay stickers para esta búsqueda", 14f,
+            Color.rgb(127, 135, 153)).apply {
+            gravity = Gravity.CENTER
+            visibility = View.GONE
         }
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        val holder = FrameLayout(context).apply {
+            addView(grid, FrameLayout.LayoutParams(-1, -1))
+            addView(noResults, FrameLayout.LayoutParams(-1, -1))
+        }
+        root.addView(holder, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(label("Toca para copiar · después pega en WhatsApp", 11f,
             Color.rgb(121, 129, 146)).apply { gravity = Gravity.CENTER },
             LinearLayout.LayoutParams(-1, dp(26)))
@@ -177,10 +188,39 @@ class StickerFloatingPicker(
         val packs = store.all().map(Sticker::pack).distinct().sorted()
         var activeFilter = "Todos"
         val choices = listOf("Todos", "Favoritos") + packs.map { "Paquete: $it" }
+        var visibleItems = emptyList<Sticker>()
+        // Recycle views so even a large collection does not decode hundreds
+        // of animated GIFs simultaneously. Only visible cells are loaded.
+        val adapter = object : android.widget.BaseAdapter() {
+            override fun getCount(): Int = visibleItems.size
+            override fun getItem(position: Int): Any = visibleItems[position]
+            override fun getItemId(position: Int): Long = visibleItems[position].id
+            override fun getView(position: Int, convertView: View?,
+                parent: android.view.ViewGroup): View {
+                val view = (convertView as? ImageView) ?: ImageView(context).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    setPadding(dp(5), dp(5), dp(5), dp(5))
+                    background = shape(Color.rgb(241, 242, 248), 12)
+                    layoutParams = android.widget.AbsListView.LayoutParams(-1, dp(82))
+                }
+                (view.drawable as? AnimatedImageDrawable)?.stop()
+                view.setImageDrawable(null)
+                val sticker = visibleItems[position]
+                view.contentDescription = "Copiar ${sticker.name}"
+                try {
+                    val drawable = ImageDecoder.decodeDrawable(
+                        ImageDecoder.createSource(store.stickerFile(sticker)))
+                    view.setImageDrawable(drawable)
+                    (drawable as? AnimatedImageDrawable)?.start()
+                } catch (_: Exception) { }
+                view.setOnClickListener { copyAndClose(sticker) }
+                return view
+            }
+        }
+        grid.adapter = adapter
         fun render() {
             val query = search.text.toString().trim()
-            grid.removeAllViews()
-            val items = store.all().asSequence()
+            visibleItems = store.all().asSequence()
                 .filter { it.matches(query) }
                 .filter {
                     when {
@@ -192,25 +232,10 @@ class StickerFloatingPicker(
                 }
                 .sortedWith(compareByDescending<Sticker> { it.favorite }
                     .thenByDescending { it.lastUsed })
-                .take(160).toList()
-            val side = ((context.resources.displayMetrics.widthPixels - dp(36)) / 4)
-                .coerceAtLeast(dp(54))
-            for (sticker in items) {
-                val image = imageView(sticker)
-                image.contentDescription = "Copiar ${sticker.name}"
-                image.setOnClickListener { copyAndClose(sticker) }
-                grid.addView(image, GridLayout.LayoutParams().apply {
-                    this.width = side; this.height = side
-                    setMargins(dp(2), dp(2), dp(2), dp(2))
-                })
-            }
-            if (items.isEmpty()) {
-                grid.addView(label("No hay stickers para esta búsqueda", 14f,
-                    Color.rgb(127, 135, 153)).apply {
-                    gravity = Gravity.CENTER
-                    setPadding(dp(12), dp(20), dp(12), dp(20))
-                })
-            }
+                .toList()
+            adapter.notifyDataSetChanged()
+            noResults.visibility = if (visibleItems.isEmpty()) View.VISIBLE else View.GONE
+            grid.visibility = if (visibleItems.isEmpty()) View.GONE else View.VISIBLE
         }
         for (choice in choices) {
             filters.addView(label(if (choice.startsWith("Paquete: ")) choice.removePrefix("Paquete: ")
