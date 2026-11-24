@@ -65,7 +65,7 @@ class StickerFloatingPicker(
     private val edge: Int get() = if (dark) Color.rgb(61, 68, 87)
         else Color.rgb(220, 223, 236)
     private val chipBg: Int get() = if (dark) Color.rgb(47, 53, 73)
-        else chipBg
+        else Color.rgb(236, 238, 249)
     private fun dp(value: Int) = (value * context.resources.displayMetrics.density).roundToInt()
     private fun unDp(value: Int) = (value / context.resources.displayMetrics.density).roundToInt()
 
