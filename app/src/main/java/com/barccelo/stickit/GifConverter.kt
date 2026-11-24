@@ -25,8 +25,22 @@ object GifConverter {
         val destination = File(folder, "${UUID.randomUUID()}.gif")
         try {
             val mime = context.contentResolver.getType(uri).orEmpty()
-            val isGif = mime == "image/gif" || uri.toString().substringBefore('?').endsWith(".gif", true)
-            val isWebp = mime == "image/webp" || uri.toString().substringBefore('?').endsWith(".webp", true)
+            // Share providers may report application/octet-stream or hide the
+            // extension. Detect the actual GIF/WebP signature first.
+            val signature = context.contentResolver.openInputStream(uri).use { input ->
+                val header = ByteArray(16)
+                val n = input?.read(header) ?: 0
+                header.copyOf(n.coerceAtLeast(0))
+            }
+            val isActualGif = signature.size >= 6 &&
+                String(signature, 0, 6, Charsets.US_ASCII).let {
+                    it == "GIF87a" || it == "GIF89a"
+                }
+            val isActualWebp = signature.size >= 12 &&
+                String(signature, 0, 4, Charsets.US_ASCII) == "RIFF" &&
+                String(signature, 8, 4, Charsets.US_ASCII) == "WEBP"
+            val isGif = isActualGif
+            val isWebp = isActualWebp
             if (isWebp) {
                 val drawable = ImageDecoder.decodeDrawable(ImageDecoder.createSource(context.contentResolver, uri))
                 if (drawable is android.graphics.drawable.AnimatedImageDrawable) {
