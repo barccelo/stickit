@@ -800,7 +800,8 @@ fun CapsuleEditor(title: String, tokens: String, onChange: (String) -> Unit,
 }
 
 @Composable
-fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean, canUndo: Boolean,
+fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
+    reprocessLabel: String = "Reprocesar GIF para WhatsApp", canUndo: Boolean,
     onDismiss: () -> Unit,
     onSave: (String, String, String, String) -> Unit,
     onArtwork: () -> Unit, onReprocess: () -> Unit, onUndo: () -> Unit,
@@ -841,7 +842,7 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean, canUndo: Bool
                         TextButton(onClick = onUndo) { Text("Deshacer edición de imagen") }
                     }
                     if (canReprocess) {
-                        TextButton(onClick = onReprocess) { Text("Reprocesar GIF para WhatsApp") }
+                        TextButton(onClick = onReprocess) { Text(reprocessLabel) }
                     }
                     TextButton(onClick = { deletion = true }) {
                         Icon(Icons.Outlined.DeleteOutline, null, Modifier.size(18.dp))

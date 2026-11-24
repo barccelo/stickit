@@ -136,6 +136,45 @@ object GifConverter {
         }
     }
 
+    /**
+     * Rebuild an already imported WhatsApp animated WebP using the new,
+     * source-faithful timing. The original .source.webp is untouched.
+     * The database row, tags, pack and favorite remain unchanged.
+     */
+    fun reprocessStoredWebp(context: Context, file: File) {
+        val source = File(file.parentFile,
+            "${file.nameWithoutExtension}.source.webp")
+        require(source.isFile) {
+            "No se conserva el WebP original. Compártelo nuevamente desde WhatsApp."
+        }
+        require(source.length() in 1..20_000_000L) {
+            "El WebP original es demasiado grande"
+        }
+        val temporary = File(file.parentFile,
+            "${file.nameWithoutExtension}.pending.gif")
+        try {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context, "${context.packageName}.fileprovider", source
+            )
+            WebPStickerImport.convert(context, uri, temporary, ::squarePixels)
+            validate(temporary)
+            try {
+                java.nio.file.Files.move(
+                    temporary.toPath(), file.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE
+                )
+            } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+                java.nio.file.Files.move(
+                    temporary.toPath(), file.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                )
+            }
+        } finally {
+            temporary.delete()
+        }
+    }
+
     private fun squarePixels(bitmap: Bitmap, size: Int = 256): IntArray {
         val square = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(square)

@@ -276,12 +276,16 @@ class MainActivity : ComponentActivity() {
                 if (current != null) {
                     val gifFile = store.stickerFile(current)
                     val base = gifFile.nameWithoutExtension
-                    val hasSource = listOf("source.gif", "source.webp").any {
-                        File(gifFile.parentFile, "$base.$it").isFile
-                    }
+                    val isWebpSource =
+                        File(gifFile.parentFile, "$base.source.webp").isFile
+                    val isGifSource =
+                        File(gifFile.parentFile, "$base.source.gif").isFile
                     StickerMetadataDialog(
                         sticker = current,
-                        canReprocess = File(gifFile.parentFile, "$base.source.gif").isFile,
+                        canReprocess = isWebpSource || isGifSource,
+                        reprocessLabel = if (isWebpSource)
+                            "Corregir animación WebP original"
+                            else "Reprocesar GIF para WhatsApp",
                         canUndo = StickerArtworkEditor.canUndo(gifFile),
                         onDismiss = { editing = null },
                         onSave = { name, tags, pack, emojis ->
@@ -293,8 +297,13 @@ class MainActivity : ComponentActivity() {
                         onReprocess = {
                             editing = null
                             runTask {
-                                GifConverter.reprocessStoredGif(gifFile)
-                                "GIF reprocesado. Puedes copiarlo nuevamente."
+                                if (isWebpSource) {
+                                    GifConverter.reprocessStoredWebp(this, gifFile)
+                                    "WebP restaurado y convertido con su duración original."
+                                } else {
+                                    GifConverter.reprocessStoredGif(gifFile)
+                                    "GIF reprocesado. Puedes copiarlo nuevamente."
+                                }
                             }
                         },
                         onUndo = {
