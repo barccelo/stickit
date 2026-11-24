@@ -61,5 +61,6 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation(project(":gif-core"))
+    implementation("com.github.bumptech.glide:gifdecoder:4.16.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

@@ -27,20 +27,29 @@ object GifConverter {
             val mime = context.contentResolver.getType(uri).orEmpty()
             val isGif = mime == "image/gif" || uri.toString().substringBefore('?').endsWith(".gif", true)
             if (isGif) {
-                context.contentResolver.openInputStream(uri).use { input ->
+                val original = context.contentResolver.openInputStream(uri).use { input ->
                     requireNotNull(input) { "No se pudo leer el GIF" }
-                    FileOutputStream(destination).use { output ->
-                        // Limit even untrusted GIF files to a reasonable size while streaming.
-                        val buffer = ByteArray(8192)
-                        var total = 0L
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            total += read
-                            require(total <= 20_000_000) { "GIF demasiado grande" }
-                            output.write(buffer, 0, read)
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        require(output.size().toLong() + read <= 20_000_000L) {
+                            "GIF demasiado grande"
                         }
+                        output.write(buffer, 0, read)
                     }
+                    output.toByteArray()
+                }
+                if (GifFrameTiming.delaysCentiseconds(original).isNotEmpty()) {
+                    GifImportNormalizer.normalize(original, destination, ::squarePixels)
+                    // Keep the untouched GIF available if a future conversion
+                    // algorithm is improved. It never replaces the export.
+                    File(folder, "${destination.nameWithoutExtension}.source.gif").writeBytes(original)
+                } else {
+                    // Some providers label a PNG image as .gif. Detect content,
+                    // rather than blindly copying the mislabeled file.
+                    imageToGif(context, uri, destination)
                 }
             } else if (mime.startsWith("video/")) {
                 videoToGif(context, uri, destination)
@@ -51,6 +60,7 @@ object GifConverter {
             return destination
         } catch (error: Exception) {
             destination.delete()
+            File(folder, "${destination.nameWithoutExtension}.source.gif").delete()
             throw error
         }
     }
