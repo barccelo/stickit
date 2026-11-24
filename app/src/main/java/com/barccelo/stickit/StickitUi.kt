@@ -834,7 +834,8 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
     onDismiss: () -> Unit,
     onSave: (String, String, String, String) -> Unit,
     onArtwork: () -> Unit, onReprocess: () -> Unit, onUndo: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit, onWebpProfile: ((Int) -> Unit)? = null,
+    playbackInfo: String? = null
 ) {
     var name by remember(sticker.id) { mutableStateOf(sticker.name) }
     var tags by remember(sticker.id) { mutableStateOf(sticker.tags) }
@@ -843,6 +844,7 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
     val emojiDraft = remember(sticker.id) { mutableStateOf("") }
     var pack by remember(sticker.id) { mutableStateOf(sticker.pack) }
     var deletion by remember { mutableStateOf(false) }
+    var playbackMenu by remember(sticker.id) { mutableStateOf(false) }
     if (deletion) {
         AlertDialog(onDismissRequest = { deletion = false },
             title = { Text("Eliminar sticker") },
@@ -870,7 +872,48 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
                     if (canUndo) {
                         TextButton(onClick = onUndo) { Text("Deshacer edición de imagen") }
                     }
-                    if (canReprocess) {
+                    if (playbackInfo != null) {
+                        Text(playbackInfo, color = Secondary,
+                            fontSize = 12.sp)
+                    }
+                    if (onWebpProfile != null) {
+                        Text("Reproducción en WhatsApp",
+                            color = Ink, fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp)
+                        Box {
+                            OutlinedButton(onClick = { playbackMenu = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(13.dp)) {
+                                Text("Comparar modos de reproducción")
+                                Spacer(Modifier.width(4.dp))
+                                Icon(Icons.Outlined.ArrowDropDown, null,
+                                    Modifier.size(18.dp))
+                            }
+                            DropdownMenu(expanded = playbackMenu,
+                                onDismissRequest = { playbackMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Completo · WhatsApp (60 cuadros)") },
+                                    onClick = {
+                                        playbackMenu = false
+                                        onWebpProfile(0)
+                                    })
+                                DropdownMenuItem(
+                                    text = { Text("Completo · mayor fluidez") },
+                                    onClick = {
+                                        playbackMenu = false
+                                        onWebpProfile(1)
+                                    })
+                                DropdownMenuItem(
+                                    text = { Text("Referencia corta · 2,4 s") },
+                                    onClick = {
+                                        playbackMenu = false
+                                        onWebpProfile(2)
+                                    })
+                            }
+                        }
+                        Text("La referencia corta recorta deliberadamente la animación solo para comparar. Los modos completos conservan su duración.",
+                            color = Secondary, fontSize = 11.sp, lineHeight = 16.sp)
+                    } else if (canReprocess) {
                         TextButton(onClick = onReprocess) { Text(reprocessLabel) }
                     }
                     TextButton(onClick = { deletion = true }) {
