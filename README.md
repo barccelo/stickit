@@ -72,3 +72,7 @@ El botón **⊕** ofrece dos opciones en el propio selector: **Pegar imagen copi
 ## Importación WebP y temporización
 
 Stickit ya no recorta silenciosamente los WebP animados a 2,4 segundos. Para conservar el ritmo, interpreta las marcas de tiempo de libwebp como el **fin de cada fotograma**, convierte sus intervalos a centésimas de segundo y agrupa únicamente los menores de 20 ms (la duración mínima estable en GIF). Los WebP de hasta 30 segundos se procesan completos; los mayores devuelven un error explícito en lugar de truncarse. Para recuperar un sticker WebP importado antes de esta corrección, abre **Editar sticker → Corregir animación WebP original**. Se conserva el nombre, las etiquetas y el paquete, pero se restaura la imagen original si había ediciones visuales.
+
+## Corrección de importación WebP — 0.4.3
+
+El decodificador nativo de WebP reutiliza el mismo objeto `Bitmap` al avanzar de fotograma. La versión anterior lo reciclaba indebidamente, impidiendo la importación de algunos stickers animados compartidos desde WhatsApp. La 0.4.3 conserva el fotograma bajo control del decodificador hasta liberar este, mantiene la duración original y proporciona el mensaje concreto si una conversión falla. Los stickers existentes no requieren migración.
