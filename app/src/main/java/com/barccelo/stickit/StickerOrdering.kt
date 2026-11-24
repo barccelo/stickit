@@ -28,8 +28,8 @@ object StickerOrdering {
     }
 
     fun sort(stickers: List<Sticker>, mode: Int): List<Sticker> = when (mode) {
-        NAME -> stickers.sortedWith(compareBy<Sticker>(String.CASE_INSENSITIVE_ORDER) {
-            it.name
+        NAME -> stickers.sortedWith(compareBy<Sticker> {
+            it.name.lowercase(java.util.Locale.ROOT)
         }.thenByDescending { it.createdAt }.thenByDescending { it.id })
         RECENT_USED -> stickers.sortedWith(compareByDescending<Sticker> { it.lastUsed }
             .thenByDescending { it.createdAt }.thenByDescending { it.id })
