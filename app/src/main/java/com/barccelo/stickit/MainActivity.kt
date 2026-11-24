@@ -587,7 +587,7 @@ class MainActivity : ComponentActivity() {
         ContextCompat.startForegroundService(this, intent)
     }
 
-    private fun runTask(task: () -> String, onSuccess: (() -> Unit)? = null) {
+    private fun runTask(onSuccess: (() -> Unit)? = null, task: () -> String) {
         if (busy) { notify("Hay una operación en curso"); return }
         busy = true
         worker.execute {
