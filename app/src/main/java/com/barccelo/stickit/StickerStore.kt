@@ -99,6 +99,9 @@ class StickerStore(private val appContext: Context) :
     fun remove(sticker: Sticker) {
         writableDatabase.delete("stickers", "id=?", arrayOf(sticker.id.toString()))
         stickerFile(sticker).delete()
+        // Remove the original GIF backup created by the compatibility encoder.
+        File(File(appContext.filesDir, "stickers"),
+            "${File(sticker.fileName).nameWithoutExtension}.source.gif").delete()
     }
 
     fun stickerFile(sticker: Sticker): File = File(File(appContext.filesDir, "stickers"), sticker.fileName)
