@@ -84,6 +84,59 @@ class StickerStore(private val appContext: Context) :
         writableDatabase.update("stickers", values, "id=?", arrayOf(sticker.id.toString()))
     }
 
+    fun setFavorite(id: Long, favorite: Boolean) {
+        writableDatabase.update("stickers", ContentValues().apply {
+            put("favorite", if (favorite) 1 else 0)
+        }, "id=?", arrayOf(id.toString()))
+    }
+
+    /**
+     * Apply one action to multiple stickers in one database transaction.
+     * Null leaves the existing field unchanged; tags are appended uniquely.
+     */
+    fun editMany(ids: Set<Long>, pack: String? = null, addTags: String? = null, favorite: Boolean? = null) {
+        if (ids.isEmpty()) return
+        val db = writableDatabase
+        val normalizedTags = addTags.orEmpty().split(",").map { it.trim().lowercase() }
+            .filter { it.isNotBlank() }
+        db.beginTransaction()
+        try {
+            val all = all().associateBy { it.id }
+            ids.forEach { id ->
+                val sticker = all[id] ?: return@forEach
+                val values = ContentValues()
+                if (pack != null) values.put("package_name", pack.trim().ifBlank { "General" })
+                if (favorite != null) values.put("favorite", if (favorite) 1 else 0)
+                if (normalizedTags.isNotEmpty()) {
+                    val combined = (sticker.tagList() + normalizedTags).distinct()
+                    values.put("tags", combined.joinToString(", "))
+                }
+                if (values.size() > 0) db.update("stickers", values, "id=?", arrayOf(id.toString()))
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    fun removeMany(ids: Set<Long>) {
+        if (ids.isEmpty()) return
+        // First save filenames; physical media are only deleted after DB commit.
+        val removed = all().filter { it.id in ids }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            removed.forEach { db.delete("stickers", "id=?", arrayOf(it.id.toString())) }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        removed.forEach { sticker ->
+            stickerFile(sticker).delete()
+            val folder = File(appContext.filesDir, "stickers")
+            val base = File(sticker.fileName).nameWithoutExtension
+            File(folder, "$"+"{base}.source.gif").delete()
+            File(folder, "$"+"{base}.source.webp").delete()
+            File(folder, "$"+"{base}.unedited.gif").delete()
+        }
+    }
+
     fun toggleFavorite(sticker: Sticker) {
         val values = ContentValues().apply { put("favorite", if (sticker.favorite) 0 else 1) }
         writableDatabase.update("stickers", values, "id=?", arrayOf(sticker.id.toString()))
@@ -100,8 +153,11 @@ class StickerStore(private val appContext: Context) :
         writableDatabase.delete("stickers", "id=?", arrayOf(sticker.id.toString()))
         stickerFile(sticker).delete()
         // Remove the original GIF backup created by the compatibility encoder.
-        File(File(appContext.filesDir, "stickers"),
-            "${File(sticker.fileName).nameWithoutExtension}.source.gif").delete()
+        val folder = File(appContext.filesDir, "stickers")
+        val base = File(sticker.fileName).nameWithoutExtension
+        File(folder, "$"+"{base}.source.gif").delete()
+        File(folder, "$"+"{base}.source.webp").delete()
+        File(folder, "$"+"{base}.unedited.gif").delete()
     }
 
     fun stickerFile(sticker: Sticker): File = File(File(appContext.filesDir, "stickers"), sticker.fileName)
