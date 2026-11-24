@@ -18,17 +18,19 @@ data class Sticker(
     val createdAt: Long,
     val lastUsed: Long,
     val uses: Int,
-    val favorite: Boolean
+    val favorite: Boolean,
+    val emojis: String = ""
 ) {
+    fun emojiList(): List<String> = emojis.split(",").map { it.trim() }.filter(String::isNotEmpty)
     fun tagList() = tags.split(",").map { it.trim() }.filter { it.isNotBlank() }
     fun matches(query: String): Boolean {
         val q = query.trim()
-        return q.isBlank() || listOf(name, tags, pack).any { it.contains(q, ignoreCase = true) }
+        return q.isBlank() || listOf(name, tags, pack, emojis).any { it.contains(q, ignoreCase = true) }
     }
 }
 
 class StickerStore(private val appContext: Context) :
-    SQLiteOpenHelper(appContext, "stickit.db", null, 1) {
+    SQLiteOpenHelper(appContext, "stickit.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE stickers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,10 +41,15 @@ class StickerStore(private val appContext: Context) :
             created_at INTEGER NOT NULL,
             last_used INTEGER NOT NULL DEFAULT 0,
             use_count INTEGER NOT NULL DEFAULT 0,
-            favorite INTEGER NOT NULL DEFAULT 0
+            favorite INTEGER NOT NULL DEFAULT 0,
+            emojis TEXT NOT NULL DEFAULT ''
         )""")
     }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE stickers ADD COLUMN emojis TEXT NOT NULL DEFAULT ''")
+        }
+    }
 
     fun all(): List<Sticker> {
         val result = mutableListOf<Sticker>()
@@ -57,28 +64,31 @@ class StickerStore(private val appContext: Context) :
                     c.getLong(c.getColumnIndexOrThrow("created_at")),
                     c.getLong(c.getColumnIndexOrThrow("last_used")),
                     c.getInt(c.getColumnIndexOrThrow("use_count")),
-                    c.getInt(c.getColumnIndexOrThrow("favorite")) == 1
+                    c.getInt(c.getColumnIndexOrThrow("favorite")) == 1,
+                    c.getString(c.getColumnIndexOrThrow("emojis"))
                 ))
             }
         }
         return result
     }
 
-    fun add(file: File, name: String, tags: String, pack: String): Long {
+    fun add(file: File, name: String, tags: String, pack: String, emojis: String = ""): Long {
         val row = ContentValues().apply {
             put("filename", file.name)
             put("name", name.ifBlank { "Sin título" })
             put("tags", sanitizeTags(tags))
+            put("emojis", sanitizeEmojis(emojis))
             put("package_name", pack.ifBlank { "General" }.trim())
             put("created_at", System.currentTimeMillis())
         }
         return writableDatabase.insertOrThrow("stickers", null, row)
     }
 
-    fun update(sticker: Sticker, name: String, tags: String, pack: String) {
+    fun update(sticker: Sticker, name: String, tags: String, pack: String, emojis: String = sticker.emojis) {
         val values = ContentValues().apply {
             put("name", name.trim().ifBlank { "Sin título" })
             put("tags", sanitizeTags(tags))
+            put("emojis", sanitizeEmojis(emojis))
             put("package_name", pack.trim().ifBlank { "General" })
         }
         writableDatabase.update("stickers", values, "id=?", arrayOf(sticker.id.toString()))
@@ -131,9 +141,9 @@ class StickerStore(private val appContext: Context) :
             stickerFile(sticker).delete()
             val folder = File(appContext.filesDir, "stickers")
             val base = File(sticker.fileName).nameWithoutExtension
-            File(folder, "$"+"{base}.source.gif").delete()
-            File(folder, "$"+"{base}.source.webp").delete()
-            File(folder, "$"+"{base}.unedited.gif").delete()
+            File(folder, "${base}.source.gif").delete()
+            File(folder, "${base}.source.webp").delete()
+            File(folder, "${base}.unedited.gif").delete()
         }
     }
 
@@ -163,12 +173,15 @@ class StickerStore(private val appContext: Context) :
         // Remove the original GIF backup created by the compatibility encoder.
         val folder = File(appContext.filesDir, "stickers")
         val base = File(sticker.fileName).nameWithoutExtension
-        File(folder, "$"+"{base}.source.gif").delete()
-        File(folder, "$"+"{base}.source.webp").delete()
-        File(folder, "$"+"{base}.unedited.gif").delete()
+        File(folder, "${base}.source.gif").delete()
+        File(folder, "${base}.source.webp").delete()
+        File(folder, "${base}.unedited.gif").delete()
     }
 
     fun stickerFile(sticker: Sticker): File = File(File(appContext.filesDir, "stickers"), sticker.fileName)
+
+    private fun sanitizeEmojis(raw: String) = raw.split(",").map { it.trim() }
+        .filter { it.isNotBlank() && it.length <= 24 }.distinct().take(30).joinToString(", ")
 
     private fun sanitizeTags(raw: String) =
         raw.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct().joinToString(", ")
