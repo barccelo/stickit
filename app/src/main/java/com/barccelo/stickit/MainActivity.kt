@@ -367,7 +367,7 @@ class MainActivity : ComponentActivity() {
                             runTask(onSuccess = {
                                 prepared?.let { pack ->
                                     try {
-                                        startActivity(WhatsAppNativePacks.addIntent(pack))
+                                        startActivity(WhatsAppNativePacks.addIntent(this, pack))
                                     } catch (_: android.content.ActivityNotFoundException) {
                                         notify("No se encontró WhatsApp para añadir el paquete.")
                                     } catch (error: Exception) {

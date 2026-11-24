@@ -49,10 +49,10 @@ internal object WhatsAppNativePacks {
         return "animated_$hex"
     }
 
-    fun addIntent(pack: PreparedNativePack): Intent =
+    fun addIntent(context: Context, pack: PreparedNativePack): Intent =
         Intent("com.whatsapp.intent.action.ENABLE_STICKER_PACK")
             .putExtra("sticker_pack_id", pack.identifier)
-            .putExtra("sticker_pack_authority", "com.barccelo.stickit.whatsappstickers")
+            .putExtra("sticker_pack_authority", authority(context))
             .putExtra("sticker_pack_name", pack.name)
 
     /**
