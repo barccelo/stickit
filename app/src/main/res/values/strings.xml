@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="stickit_accessibility_description">Permite reconocer atajos y emojis exclusivamente en los campos editables de WhatsApp. No guarda lo que escribes, no accede a contraseñas y no envía datos.</string>
+</resources>
