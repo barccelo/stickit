@@ -998,9 +998,9 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
                         OutlinedButton(onClick = onAddNativeWhatsApp,
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(13.dp)) {
-                            Text("Añadir animados a WhatsApp")
+                            Text("Añadir como sticker animado a WhatsApp")
                         }
-                        Text("Utiliza los WebP originales de este paquete: sin convertir a GIF. WhatsApp requiere de 3 a 30 stickers animados compatibles y pide confirmar la incorporación.",
+                        Text("Evita el GIF y utiliza el WebP animado original, sin cambiar su velocidad. Stickit reúne stickers compatibles de toda la biblioteca (WhatsApp exige de 3 a 30 y hasta 10 s por sticker). Confirma la incorporación en WhatsApp; después envíalos desde su selector de stickers.",
                             color = Secondary, fontSize = 11.sp, lineHeight = 16.sp)
                     }
                     TextButton(onClick = { deletion = true }) {

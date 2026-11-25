@@ -43,6 +43,8 @@ class MainActivity : ComponentActivity() {
         const val ACTION_QUICK_IMPORT = "com.barccelo.stickit.QUICK_IMPORT"
         const val ACTION_QUICK_PASTE = "com.barccelo.stickit.QUICK_PASTE"
         const val ACTION_QUICK_FILES = "com.barccelo.stickit.QUICK_FILES"
+        const val ACTION_ADD_NATIVE_STICKER = "com.barccelo.stickit.ADD_NATIVE_STICKER"
+        const val EXTRA_STICKER_ID = "com.barccelo.stickit.STICKER_ID"
     }
     private lateinit var store: StickerStore
     private val worker = Executors.newSingleThreadExecutor()
@@ -427,21 +429,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onAddNativeWhatsApp = if (isWebpSource) ({
                             editing = null
-                            var prepared: PreparedNativePack? = null
-                            runTask(onSuccess = {
-                                prepared?.let { pack ->
-                                    try {
-                                        startActivity(WhatsAppNativePacks.addIntent(this, pack))
-                                    } catch (_: android.content.ActivityNotFoundException) {
-                                        notify("No se encontró WhatsApp para añadir el paquete.")
-                                    } catch (error: Exception) {
-                                        notify("WhatsApp no pudo abrir el paquete: ${error.message}")
-                                    }
-                                }
-                            }) {
-                                prepared = WhatsAppNativePacks.prepare(this, store, current)
-                                "Paquete animado preparado. Confirma su incorporación en WhatsApp."
-                            }
+                            addNativeSticker(current.id)
                         }) else null,
                         onDismiss = { editing = null },
                         onSave = { name, tags, pack, emojis ->
@@ -510,6 +498,43 @@ class MainActivity : ComponentActivity() {
                 mediaPicker.launch(arrayOf("image/*", "video/*"))
             }
             ACTION_QUICK_PASTE -> requestClipboardPaste()
+            ACTION_ADD_NATIVE_STICKER -> window.decorView.post {
+                addNativeSticker(intent.getLongExtra(EXTRA_STICKER_ID, -1L))
+            }
+        }
+    }
+
+    /**
+     * Bring native sticker-pack preparation into the foreground Activity.
+     * The overlay never decodes WebP on the UI thread, and WhatsApp is started
+     * by an Activity rather than by a background accessibility service.
+     */
+    private fun addNativeSticker(id: Long) {
+        if (busy) {
+            notify("Hay una operación en curso.")
+            return
+        }
+        val sticker = store.all().firstOrNull { it.id == id }
+        if (sticker == null) {
+            notify("No se encontró el sticker seleccionado.")
+            return
+        }
+        var prepared: PreparedNativePack? = null
+        runTask(title = "Preparando stickers animados para WhatsApp",
+            onSuccess = {
+                prepared?.let { pack ->
+                    try {
+                        startActivity(WhatsAppNativePacks.addIntent(this, pack))
+                    } catch (_: android.content.ActivityNotFoundException) {
+                        notify("WhatsApp no está disponible para añadir el paquete.")
+                    } catch (e: Exception) {
+                        notify("WhatsApp no pudo abrir el paquete: ${e.message}")
+                    }
+                }
+            }) {
+            prepared = WhatsAppNativePacks.prepareQuick(this, store, sticker)
+            "Paquete de ${prepared?.count ?: 0} animados listo. " +
+                "Confirma su incorporación en WhatsApp."
         }
     }
 
@@ -548,6 +573,9 @@ class MainActivity : ComponentActivity() {
                 mediaPicker.launch(arrayOf("image/*", "video/*"))
             }
             ACTION_QUICK_PASTE -> window.decorView.post { requestClipboardPaste() }
+            ACTION_ADD_NATIVE_STICKER -> window.decorView.post {
+                addNativeSticker(intent.getLongExtra(EXTRA_STICKER_ID, -1L))
+            }
             else -> processShareIntent(intent)
         }
     }

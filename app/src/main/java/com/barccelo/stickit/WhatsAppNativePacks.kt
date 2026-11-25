@@ -95,18 +95,42 @@ internal object WhatsAppNativePacks {
         }
     }
 
-    fun prepare(context: Context, store: StickerStore, selected: Sticker): PreparedNativePack {
-        val identifier = packId(selected.pack)
-        val packName = "Stickit · ${selected.pack}".take(128)
+    fun prepare(context: Context, store: StickerStore, selected: Sticker): PreparedNativePack =
+        prepareInternal(context, store, selected, includeLibrary = false)
+
+    /**
+     * Native sticker alternative to GIF clipboard paste: gather WhatsApp-ready
+     * ORIGINAL animated WebPs from the entire Stickit library. WhatsApp needs
+     * 3–30 stickers per pack, so they needn't all live in the same Stickit pack.
+     * This is a stable, reusable WhatsApp pack rather than a new pack per tap.
+     */
+    fun prepareQuick(context: Context, store: StickerStore, selected: Sticker): PreparedNativePack =
+        prepareInternal(context, store, selected, includeLibrary = true)
+
+    private fun prepareInternal(context: Context, store: StickerStore,
+        selected: Sticker, includeLibrary: Boolean): PreparedNativePack {
+        val identifier = packId(if (includeLibrary) "Stickit · Animados" else selected.pack)
+        val packName = if (includeLibrary) "Stickit · Animados"
+            else "Stickit · ${selected.pack}".take(128)
         val root = root(context)
         val target = File(root, identifier)
         if (!target.isDirectory &&
             (root.listFiles()?.count { it.isDirectory && safeId.matches(it.name) } ?: 0) >= MAX_PACKS) {
             throw IllegalArgumentException("WhatsApp admite hasta 10 paquetes desde Stickit.")
         }
-        val selectedFirst = listOf(selected) + store.all().filter {
-            it.id != selected.id && it.pack.equals(selected.pack, ignoreCase = true)
+        val selectedGif = store.stickerFile(selected)
+        val selectedWebp = File(selectedGif.parentFile,
+            "${selectedGif.nameWithoutExtension}.source.webp")
+        require(isCompatible(context, selectedWebp)) {
+            "Este sticker no tiene un WebP animado original compatible. " +
+                "WhatsApp exige 512×512, 500 KB como máximo, animación de hasta 10 s " +
+                "y fotogramas de al menos 8 ms. Prueba con otro sticker importado de WhatsApp."
         }
+        val candidatePool = store.all().filter { item ->
+            item.id != selected.id &&
+                (includeLibrary || item.pack.equals(selected.pack, ignoreCase = true))
+        }
+        val selectedFirst = listOf(selected) + candidatePool
         val compatible = ArrayList<Pair<Sticker, File>>()
         for (item in selectedFirst) {
             if (compatible.size >= 30) break
@@ -115,8 +139,10 @@ internal object WhatsAppNativePacks {
             if (isCompatible(context, source)) compatible.add(item to source)
         }
         require(compatible.size >= 3) {
-            "Este paquete tiene ${compatible.size} WebP animados compatibles. " +
-                "WhatsApp exige al menos 3 (512×512, máximo 500 KB y 10 s por sticker)."
+            "Encontré ${compatible.size} WebP animado(s) compatibles " +
+                (if (includeLibrary) "en toda tu biblioteca. " else "en este paquete. ") +
+                "WhatsApp exige al menos 3 stickers animados originales por paquete. " +
+                "Importa otros dos stickers animados de WhatsApp y vuelve a intentarlo."
         }
         require(compatible.first().first.id == selected.id) {
             "Este sticker original no cumple los límites nativos de WhatsApp."

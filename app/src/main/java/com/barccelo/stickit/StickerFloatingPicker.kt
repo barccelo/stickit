@@ -274,7 +274,7 @@ class StickerFloatingPicker(
             addView(noResults, FrameLayout.LayoutParams(-1, -1))
         }
         root.addView(holder, LinearLayout.LayoutParams(-1, 0, 1f))
-        val footer = label("Toca para copiar · mantén pulsado para enviar GIF", 11f,
+        val footer = label("Toca para copiar · mantén pulsado para otras opciones", 11f,
             muted).apply { gravity = Gravity.CENTER }
         root.addView(footer, LinearLayout.LayoutParams(-1, dp(26)))
 
@@ -383,7 +383,7 @@ class StickerFloatingPicker(
                 } catch (_: Exception) { }
                 view.setOnClickListener { copyAndClose(sticker) }
                 view.setOnLongClickListener {
-                    shareAndClose(sticker)
+                    showStickerActions(view, sticker)
                     true
                 }
                 return view
@@ -506,6 +506,54 @@ class StickerFloatingPicker(
         } catch (_: Exception) { }
     }
 
+    /**
+     * The WebP option bypasses WhatsApp's GIF clipboard decoder entirely.
+     * Tap remains copy for existing workflows; long press offers two different
+     * delivery paths so the user can compare both on their device.
+     */
+    private fun showStickerActions(anchor: View, sticker: Sticker) {
+        val menu = android.widget.PopupMenu(context, anchor)
+        menu.menu.add(0, 1, 0, "Añadir como sticker animado a WhatsApp")
+        menu.menu.add(0, 2, 1, "Compartir GIF (otra vía)")
+        menu.menu.add(0, 3, 2, "Copiar GIF")
+        menu.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> {
+                    addNativeAndClose(sticker)
+                    true
+                }
+                2 -> {
+                    shareAndClose(sticker)
+                    true
+                }
+                3 -> {
+                    copyAndClose(sticker)
+                    true
+                }
+                else -> false
+            }
+        }
+        menu.show()
+    }
+
+    private fun addNativeAndClose(sticker: Sticker) {
+        try {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                action = MainActivity.ACTION_ADD_NATIVE_STICKER
+                putExtra(MainActivity.EXTRA_STICKER_ID, sticker.id)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            context.startActivity(intent)
+            hidePicker()
+            hideSuggestions()
+        } catch (e: Exception) {
+            Toast.makeText(context, "No se pudo abrir WhatsApp: ${e.message}",
+                Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun shareAndClose(sticker: Sticker) {
         try {
             ClipboardBridge.shareGif(context, store.stickerFile(sticker))
@@ -623,8 +671,7 @@ class StickerFloatingPicker(
             view.contentDescription = "Copiar sugerencia: ${sticker.name}"
             view.setOnClickListener { copyAndClose(sticker, removeEmoji) }
             view.setOnLongClickListener {
-                // Sending through a chooser never edits the WhatsApp message.
-                shareAndClose(sticker)
+                showStickerActions(view, sticker)
                 true
             }
             bar.addView(view, LinearLayout.LayoutParams(dp(50), dp(50)).apply {

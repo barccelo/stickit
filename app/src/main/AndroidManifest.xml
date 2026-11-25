@@ -47,6 +47,7 @@
         <provider android:name=".WhatsAppNativePackProvider"
             android:authorities="${applicationId}.whatsappstickers"
             android:enabled="true" android:exported="true"
+            android:grantUriPermissions="true"
             android:readPermission="com.whatsapp.sticker.READ" />
         <service android:name=".StickerShortcutService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
