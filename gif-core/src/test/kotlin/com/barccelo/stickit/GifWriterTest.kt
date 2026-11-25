@@ -144,7 +144,7 @@ class GifWriterTest {
         }
         val bytes = compact.toByteArray()
         assertTrue("Cropped frames must save bytes",
-            bytes.size < legacy.size)
+            bytes.size < legacy.size())
         assertEquals(listOf(4, 4), GifFrameTiming.delaysCentiseconds(bytes))
         assertEquals(160, (bytes[6].toInt() and 255))
         assertEquals(160, (bytes[8].toInt() and 255))
