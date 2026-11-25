@@ -123,6 +123,63 @@ class GifWriterTest {
         }
     }
 
+    @Test fun croppedFramesHaveSmallerRectanglesAndPreserveGifDuration() {
+        val first = IntArray(160 * 160) { 0 }
+        val second = IntArray(160 * 160) { 0 }
+        for (y in 50 until 82) for (x in 40 until 72) first[y * 160 + x] =
+            0xFFFF5533.toInt()
+        for (y in 60 until 92) for (x in 50 until 82) second[y * 160 + x] =
+            0xFFFF5533.toInt()
+        val compact = ByteArrayOutputStream()
+        val legacy = ByteArrayOutputStream()
+        GifWriter(compact, 160, cropTransparentBounds = true).apply {
+            frame(first, 4)
+            frame(second, 4)
+            finish()
+        }
+        GifWriter(legacy, 160).apply {
+            frame(first, 4)
+            frame(second, 4)
+            finish()
+        }
+        val bytes = compact.toByteArray()
+        assertTrue("Cropped frames must save bytes",
+            bytes.size < legacy.size)
+        assertEquals(listOf(4, 4), GifFrameTiming.delaysCentiseconds(bytes))
+        assertEquals(160, (bytes[6].toInt() and 255))
+        assertEquals(160, (bytes[8].toInt() and 255))
+        withDecoded(bytes) { reader ->
+            assertEquals(2, reader.getNumImages(true))
+            assertEquals(32, reader.read(0).width)
+            assertEquals(32, reader.read(0).height)
+            assertEquals(32, reader.read(1).width)
+            assertEquals(32, reader.read(1).height)
+            assertEquals(255, reader.read(0).getRGB(10, 10) ushr 24)
+        }
+    }
+
+    @Test fun blankFrameInOptimizedWriterDoesNotBreakPlayback() {
+        val blank = IntArray(112 * 112)
+        val filled = IntArray(112 * 112) { i ->
+            if (i % 112 in 20 until 60 && i / 112 in 20 until 60)
+                0xFF2277BB.toInt() else 0
+        }
+        val output = ByteArrayOutputStream()
+        GifWriter(output, 112, cropTransparentBounds = true).apply {
+            frame(filled, 4)
+            frame(blank, 12)
+            frame(filled, 4)
+            finish()
+        }
+        val bytes = output.toByteArray()
+        assertEquals(listOf(4, 12, 4), GifFrameTiming.delaysCentiseconds(bytes))
+        withDecoded(bytes) { reader ->
+            assertEquals(3, reader.getNumImages(true))
+            assertEquals(1, reader.read(1).width)
+            assertEquals(1, reader.read(1).height)
+        }
+    }
+
     private fun assertColorClose(expected: Int, actual: Int, maxError: Int) {
         for (shift in listOf(16, 8, 0)) {
             val e = (expected ushr shift) and 255

@@ -14,7 +14,8 @@ import kotlin.math.sqrt
  *
  * Platform-neutral: decoded output is checked by JVM tests using ImageIO.
  */
-class GifWriter(private val stream: OutputStream, private val size: Int = 256) {
+class GifWriter(private val stream: OutputStream, private val size: Int = 256,
+    private val cropTransparentBounds: Boolean = false) {
     init {
         require(size in 1..4096)
         ascii("GIF89a")
@@ -28,7 +29,42 @@ class GifWriter(private val stream: OutputStream, private val size: Int = 256) {
 
     fun frame(argb: IntArray, delayCentiseconds: Int) {
         require(argb.size == size * size) { "Expected a square ARGB frame" }
-        val indexed = AdaptivePalette.quantize(argb)
+        // Crop blank borders WITHOUT altering the logical screen or disposal.
+        // Each frame is independent: disposal=2 clears the previous rectangle.
+        // This is safe for stickers with moving content and transparent areas.
+        // Keep legacy full-frame output unchanged unless explicitly enabled.
+        var left = size
+        var top = size
+        var right = -1
+        var bottom = -1
+        if (cropTransparentBounds) {
+            for (y in 0 until size) for (x in 0 until size) {
+                if ((argb[y * size + x] ushr 24) >= 128) {
+                    if (x < left) left = x
+                    if (x > right) right = x
+                    if (y < top) top = y
+                    if (y > bottom) bottom = y
+                }
+            }
+        }
+        if (!cropTransparentBounds || right < 0) {
+            if (!cropTransparentBounds) {
+                left = 0; top = 0; right = size - 1; bottom = size - 1
+            } else {
+                // GIF descriptors require at least one pixel.
+                left = 0; top = 0; right = 0; bottom = 0
+            }
+        }
+        val width = right - left + 1
+        val height = bottom - top + 1
+        val region = if (left == 0 && top == 0 &&
+            width == size && height == size) argb else
+            IntArray(width * height) { index ->
+                val y = index / width
+                val x = index % width
+                argb[(y + top) * size + x + left]
+            }
+        val indexed = AdaptivePalette.quantize(region)
 
         // Disposal to background, transparency index 0.
         byte(0x21); byte(0xF9); byte(4); byte(0x09)
@@ -36,7 +72,7 @@ class GifWriter(private val stream: OutputStream, private val size: Int = 256) {
         byte(0); byte(0)
 
         // Image descriptor with a per-frame 256-color local table (0x87).
-        byte(0x2C); short(0); short(0); short(size); short(size); byte(0x87)
+        byte(0x2C); short(left); short(top); short(width); short(height); byte(0x87)
         for (color in indexed.palette) {
             byte(color ushr 16)
             byte(color ushr 8)

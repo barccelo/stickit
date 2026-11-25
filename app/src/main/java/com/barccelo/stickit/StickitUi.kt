@@ -164,6 +164,7 @@ fun StickitHome(
     onFolder: () -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
+    onOptimizeAnimated: () -> Unit,
     onCopy: (Sticker) -> Unit,
     onEdit: (Sticker) -> Unit,
     onFavorite: (Sticker) -> Unit,
@@ -632,6 +633,22 @@ fun StickitHome(
                             }
                         }
                         item {
+                            SettingsPanel("Animaciones para WhatsApp",
+                                "GIF más ligeros, completos y sin instalar paquetes") {
+                                OutlinedButton(onClick = onOptimizeAnimated,
+                                    enabled = !busy,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp)) {
+                                    Icon(Icons.Outlined.AutoFixHigh, null,
+                                        modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Optimizar GIFs existentes")
+                                }
+                                Text("Reconstruye todos los stickers importados de WebP usando sus originales: resolución optimizada y menos píxeles por cuadro. Conserva la animación completa, etiquetas, nombres y favoritos. Para comparar un solo sticker, usa Editar → Comparar modos.",
+                                    color = Secondary, fontSize = 12.sp, lineHeight = 17.sp)
+                            }
+                        }
+                        item {
                             SettingsPanel("Copia de seguridad", "Respaldo local que incluye imágenes, GIF, etiquetas, favoritos y paquetes") {
                                 Button(onClick = onExportBackup,
                                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
@@ -964,6 +981,18 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
                             DropdownMenu(expanded = playbackMenu,
                                 onDismissRequest = { playbackMenu = false }) {
                                 DropdownMenuItem(
+                                    text = { Text("Completo · GIF ligero (nuevo)") },
+                                    onClick = {
+                                        playbackMenu = false
+                                        onWebpProfile(4)
+                                    })
+                                DropdownMenuItem(
+                                    text = { Text("Completo · GIF ultraligero (prueba)") },
+                                    onClick = {
+                                        playbackMenu = false
+                                        onWebpProfile(5)
+                                    })
+                                DropdownMenuItem(
                                     text = { Text("Completo · WhatsApp (60 cuadros)") },
                                     onClick = {
                                         playbackMenu = false
@@ -989,7 +1018,7 @@ fun StickerMetadataDialog(sticker: Sticker, canReprocess: Boolean,
                                     })
                             }
                         }
-                        Text("El nuevo modo repite el muestreo de la prueba de 2,4 s por tramos hasta el final, sin acelerar ni recortar. WhatsApp puede reproducir un GIF largo de forma diferente; compara los resultados.",
+                        Text("Los modos ligeros conservan toda la duración, reducen resolución y eliminan bordes transparentes para disminuir los datos que WhatsApp debe procesar. El de 2,4 s queda como referencia. Prueba un GIF completo: la reproducción final depende de WhatsApp.",
                             color = Secondary, fontSize = 11.sp, lineHeight = 16.sp)
                     } else if (canReprocess) {
                         TextButton(onClick = onReprocess) { Text(reprocessLabel) }

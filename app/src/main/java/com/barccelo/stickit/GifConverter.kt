@@ -44,7 +44,8 @@ object GifConverter {
             if (isWebp) {
                 val drawable = ImageDecoder.decodeDrawable(ImageDecoder.createSource(context.contentResolver, uri))
                 if (drawable is android.graphics.drawable.AnimatedImageDrawable) {
-                    WebPStickerImport.convert(context, uri, destination, ::squarePixels)
+                    WebPStickerImport.convert(context, uri, destination,
+                        { bitmap, size -> squarePixels(bitmap, size) })
                 } else {
                     imageToGif(context, uri, destination)
                 }
@@ -144,7 +145,7 @@ object GifConverter {
     fun reprocessStoredWebp(
         context: Context,
         file: File,
-        profile: WebPPlaybackProfile = WebPPlaybackProfile.HIGH_FPS
+        profile: WebPPlaybackProfile = WebPPlaybackProfile.LIGHT_FULL
     ) {
         val source = File(file.parentFile,
             "${file.nameWithoutExtension}.source.webp")
@@ -160,8 +161,8 @@ object GifConverter {
             val uri = androidx.core.content.FileProvider.getUriForFile(
                 context, "${context.packageName}.fileprovider", source
             )
-            WebPStickerImport.convert(context, uri, temporary, ::squarePixels,
-                profile)
+            WebPStickerImport.convert(context, uri, temporary,
+                { bitmap, size -> squarePixels(bitmap, size) }, profile)
             validate(temporary)
             try {
                 java.nio.file.Files.move(

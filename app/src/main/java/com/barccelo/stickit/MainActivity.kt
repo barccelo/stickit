@@ -215,6 +215,7 @@ class MainActivity : ComponentActivity() {
                         backupReader.launch(arrayOf("application/zip",
                             "application/x-zip-compressed", "application/octet-stream"))
                     },
+                    onOptimizeAnimated = { optimizeAnimatedStickers() },
                     onCopy = { copySticker(it) },
                     onEdit = { editing = it },
                     onFavorite = { store.toggleFavorite(it); refresh() },
@@ -400,6 +401,8 @@ class MainActivity : ComponentActivity() {
                                 1 -> WebPPlaybackProfile.HIGH_FPS
                                 2 -> WebPPlaybackProfile.SHORT_REFERENCE
                                 3 -> WebPPlaybackProfile.FULL_REFERENCE_RHYTHM
+                                4 -> WebPPlaybackProfile.LIGHT_FULL
+                                5 -> WebPPlaybackProfile.EXTRA_LIGHT_FULL
                                 else -> WebPPlaybackProfile.WHATSAPP_COMPAT
                             }
                             runTask {
@@ -414,6 +417,10 @@ class MainActivity : ComponentActivity() {
                                         "GIF de referencia: solo los primeros 2,4 segundos."
                                     WebPPlaybackProfile.FULL_REFERENCE_RHYTHM ->
                                         "GIF completo con el mismo muestreo de la referencia de 2,4 s; conserva la duración."
+                                    WebPPlaybackProfile.LIGHT_FULL ->
+                                        "GIF completo de menor peso, con cuadros recortados y velocidad original."
+                                    WebPPlaybackProfile.EXTRA_LIGHT_FULL ->
+                                        "GIF completo de peso mínimo, con resolución menor y velocidad original."
                                 }
                             }
                         }) else null,
@@ -427,10 +434,10 @@ class MainActivity : ComponentActivity() {
                                 notify("No se pudo abrir el envío: ${error.message}")
                             }
                         },
-                        onAddNativeWhatsApp = if (isWebpSource) ({
-                            editing = null
-                            addNativeSticker(current.id)
-                        }) else null,
+                        // No sticker packs: sending must remain a normal
+                        // one-tap copy/paste workflow. Leave native export
+                        // dormant rather than exposing a failed pack action.
+                        onAddNativeWhatsApp = null,
                         onDismiss = { editing = null },
                         onSave = { name, tags, pack, emojis ->
                             store.update(current, name, tags, pack, emojis)
@@ -577,6 +584,39 @@ class MainActivity : ComponentActivity() {
                 addNativeSticker(intent.getLongExtra(EXTRA_STICKER_ID, -1L))
             }
             else -> processShareIntent(intent)
+        }
+    }
+
+    private fun optimizeAnimatedStickers() {
+        val originals = store.all().filter { sticker ->
+            val gif = store.stickerFile(sticker)
+            File(gif.parentFile, "${gif.nameWithoutExtension}.source.webp").isFile
+        }
+        if (originals.isEmpty()) {
+            notify("No hay WebP animados originales para optimizar.")
+            return
+        }
+        runTask(title = "Optimizando GIFs animados") {
+            var converted = 0
+            var failed = 0
+            var reason: String? = null
+            originals.forEachIndexed { index, sticker ->
+                publishProgress("Optimizando GIFs animados",
+                    "Procesando ${sticker.name}", index, originals.size)
+                try {
+                    GifConverter.reprocessStoredWebp(this, store.stickerFile(sticker),
+                        WebPPlaybackProfile.LIGHT_FULL)
+                    converted++
+                } catch (e: Exception) {
+                    failed++
+                    if (reason == null) reason = e.message?.take(130)
+                }
+            }
+            publishProgress("Optimizando GIFs animados",
+                "Finalizando", originals.size, originals.size)
+            "${converted} GIFs optimizados sin cortar la animación" +
+                if (failed > 0) " · ${failed} omitidos: ${reason ?: "Error de conversión"}"
+                else "."
         }
     }
 

@@ -513,15 +513,10 @@ class StickerFloatingPicker(
      */
     private fun showStickerActions(anchor: View, sticker: Sticker) {
         val menu = android.widget.PopupMenu(context, anchor)
-        menu.menu.add(0, 1, 0, "Añadir como sticker animado a WhatsApp")
-        menu.menu.add(0, 2, 1, "Compartir GIF (otra vía)")
-        menu.menu.add(0, 3, 2, "Copiar GIF")
+        menu.menu.add(0, 2, 0, "Compartir GIF (otra vía)")
+        menu.menu.add(0, 3, 1, "Copiar GIF")
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
-                1 -> {
-                    addNativeAndClose(sticker)
-                    true
-                }
                 2 -> {
                     shareAndClose(sticker)
                     true

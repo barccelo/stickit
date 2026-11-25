@@ -143,3 +143,14 @@ La reproducción lenta de GIF completos al pegarlos desde el portapapeles persis
 - **Editor:** «Añadir como sticker animado a WhatsApp» también prepara el paquete común, en lugar de exigir tres stickers en el mismo paquete de Stickit. La importación, la biblioteca y los modos de GIF de versiones anteriores se preservan.
 
 **Limitaciones:** no existe una API pública de WhatsApp para enviar de forma automática un sticker animado individual desde otra aplicación; se debe confirmar la incorporación del paquete y elegir después el sticker en el selector de WhatsApp. Este método evita la ruta problemática de GIF, pero el resultado dentro de WhatsApp requiere una prueba en el teléfono.
+
+## Stickit 0.5.8 — GIF ligero completo, sin paquetes
+
+El usuario confirmó que el GIF de 2,4 s se reproduce con velocidad correcta en WhatsApp pero los GIF completos siguen lentos; además, la integración de paquetes WebP nativos no funcionó en su dispositivo y no cumple el flujo deseado. Se elimina el acceso a paquetes nativos del selector y del editor. No se requiere crear paquetes: se conserva tocar para copiar y pegar en WhatsApp.
+
+**Hipótesis técnica nueva:** el GIF actual almacena cada uno de sus cientos de fotogramas como una imagen de 256×256 px, con paleta individual, aun cuando buena parte del fotograma sea transparente. WhatsApp puede tener problemas al decodificar GIF largos/pesados. La nueva exportación reduce el trabajo por fotograma, **sin truncar la duración ni cambiar los tiempos codificados**.
+
+- Nuevas importaciones WebP animadas generan por defecto «Completo · GIF ligero»: 160 px si dura ≤6 s, 144 px hasta 12 s y 128 px para duraciones superiores. «Completo · GIF ultraligero» es un experimento adicional con 112 o 96 px. Ambas usan el muestreo original de hasta 25 fps / fragmentos de 2,4 s, **sin recortar y sin multiplicar la velocidad**.
+- El codificador GIF tiene modo opcional de cuadros rectangulares: calcula el rectángulo que contiene píxeles visibles y guarda solo esa área mediante GIF89a y disposal-to-background, conservando el tamaño lógico y la duración de toda la imagen. El encoder habitual no cambia y permite comparar.
+- En **Editar sticker → Comparar modos** se encuentran los nuevos modos junto con las referencias anteriores. En **Ajustes → Animaciones para WhatsApp → Optimizar GIFs existentes** se pueden reconstruir todos los GIF basados en archivos `.source.webp` con un solo toque y barra de progreso. El WebP original y la base de datos no se alteran; cada GIF se sustituye atómicamente.
+- Los tests comprueban que la codificación de rectángulos reduce bytes sin cambiar los delays, mantiene imágenes decodificables y soporta fotogramas transparentes. **El comportamiento en WhatsApp se debe comprobar en el dispositivo**; no hay garantía de que WhatsApp interprete animaciones de mayor duración de la misma forma que la corta.

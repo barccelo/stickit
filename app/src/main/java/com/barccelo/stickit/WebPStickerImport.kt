@@ -24,7 +24,8 @@ import java.io.FileOutputStream
  * clips and is only a diagnostic reference to the formerly working export.
  */
 enum class WebPPlaybackProfile {
-    WHATSAPP_COMPAT, HIGH_FPS, SHORT_REFERENCE, FULL_REFERENCE_RHYTHM
+    WHATSAPP_COMPAT, HIGH_FPS, SHORT_REFERENCE, FULL_REFERENCE_RHYTHM,
+    LIGHT_FULL, EXTRA_LIGHT_FULL
 }
 
 internal object WebPStickerImport {
@@ -32,8 +33,8 @@ internal object WebPStickerImport {
         context: Context,
         uri: Uri,
         destination: File,
-        square: (Bitmap) -> IntArray,
-        profile: WebPPlaybackProfile = WebPPlaybackProfile.HIGH_FPS
+        square: (Bitmap, Int) -> IntArray,
+        profile: WebPPlaybackProfile = WebPPlaybackProfile.LIGHT_FULL
     ) {
         val decoder = WebPDecoder(context)
         try {
@@ -71,15 +72,32 @@ internal object WebPStickerImport {
                     WebPFrameTiming.plan(frameEndTimes,
                         WebPFrameTiming.COMPAT_FRAME_CAP,
                         WebPFrameTiming.SHORT_REFERENCE_MS)
-                WebPPlaybackProfile.FULL_REFERENCE_RHYTHM ->
+                WebPPlaybackProfile.FULL_REFERENCE_RHYTHM,
+                WebPPlaybackProfile.LIGHT_FULL,
+                WebPPlaybackProfile.EXTRA_LIGHT_FULL ->
                     WebPFrameTiming.fullAtReferenceCadence(frameEndTimes)
+            }
+            // Smaller frames lower GIF decode and transfer load without
+            // changing the number, timestamps or duration of source samples.
+            val isCompact = profile == WebPPlaybackProfile.LIGHT_FULL ||
+                profile == WebPPlaybackProfile.EXTRA_LIGHT_FULL
+            val duration = frameEndTimes.last()
+            val size = when (profile) {
+                WebPPlaybackProfile.LIGHT_FULL -> when {
+                    duration <= 6_000 -> 160
+                    duration <= 12_000 -> 144
+                    else -> 128
+                }
+                WebPPlaybackProfile.EXTRA_LIGHT_FULL ->
+                    if (duration <= 12_000) 112 else 96
+                else -> 256
             }
             decoder.reset()
 
             // Pass 2: use the same decoder-owned reusable bitmap. The
             // square() converter makes and recycles only its OWN bitmap.
             FileOutputStream(destination).use { output ->
-                val gif = GifWriter(output)
+                val gif = GifWriter(output, size, cropTransparentBounds = isCompact)
                 var sourceIndex = 0
                 var written = 0
                 while (decoder.hasNextFrame() && written < frames.size) {
@@ -92,7 +110,7 @@ internal object WebPStickerImport {
                         // A low-fps WebP may require several 40-ms output
                         // frames to preserve the same wall-clock duration.
                         // Reuse the decoded pixels before advancing libwebp.
-                        val pixels = square(bitmap)
+                        val pixels = square(bitmap, size)
                         while (written < frames.size &&
                             frames[written].sourceIndex == sourceIndex) {
                             gif.frame(pixels, frames[written].delayCentiseconds)
